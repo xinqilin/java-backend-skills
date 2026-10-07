@@ -1,6 +1,6 @@
 {
   "name": "bill-code-reviewer",
-  "version": "1.2.0",
+  "version": "1.3.0",
   "description": "Expert code reviewer focusing on clean code, design patterns, and Java best practices",
   "author": {
     "name": "bill.lin"

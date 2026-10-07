@@ -101,7 +101,13 @@ cd claude-dev-toolkit-marketplace
 git pull
 ```
 
-**marketplace 使用者**：Plugin 重新載入時自動從 GitHub repo 拉取更新。
+**marketplace 使用者**：只有 plugin 的 `version` 變更時才會收到新版，且此 marketplace 預設不自動更新。手動更新：
+
+```bash
+claude plugin update <plugin-name>@bill-lin-dev-toolkit
+```
+
+或一次開啟自動更新：`/plugin` → **Marketplaces** → `bill-lin-dev-toolkit` → **Enable auto-update**。更新會在下個 session 或執行 `/reload-plugins` 後生效。
 
 ## 快速開始
 

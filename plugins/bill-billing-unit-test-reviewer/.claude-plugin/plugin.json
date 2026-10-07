@@ -1,6 +1,6 @@
 {
   "name": "bill-billing-unit-test-reviewer",
-  "version": "1.2.0",
+  "version": "1.3.0",
   "description": "Senior unit test reviewer specializing in Java/Spring Boot testing best practices",
   "author": {
     "name": "bill.lin"

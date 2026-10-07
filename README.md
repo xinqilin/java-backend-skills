@@ -101,7 +101,13 @@ cd claude-dev-toolkit-marketplace
 git pull
 ```
 
-**marketplace users**: Updates are pulled from the GitHub repo automatically when the plugin reloads.
+**marketplace users**: A new release reaches you only when the plugin's `version` changes, and auto-update is off by default for this marketplace. Update on demand:
+
+```bash
+claude plugin update <plugin-name>@bill-lin-dev-toolkit
+```
+
+Or turn on auto-update once: `/plugin` → **Marketplaces** → `bill-lin-dev-toolkit` → **Enable auto-update**. Updates apply in the next session or after `/reload-plugins`.
 
 ## Quick Start
 

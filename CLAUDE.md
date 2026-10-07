@@ -4,108 +4,76 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-Claude Code plugin repository for Java/Spring Boot development. Contains 4 independent plugins installable via `install.sh`.
+Claude Code plugin marketplace for Java/Spring Boot development: 4 plugins built only from Markdown (agents, skills) and JSON manifests. No application code, no build/test pipeline.
 
 ## Architecture
 
 ```
-.claude-plugin/marketplace.json    # Marketplace manifest (repo-level, lists all plugins)
-plugins/
-  <plugin-name>/
-    .claude-plugin/plugin.json     # Per-plugin manifest (required by /plugin UI)
-    agents/<name>.md               # Agent definition (YAML frontmatter + instructions)
-    skills/<skill-name>/           # Skill folder (slash command or knowledge base)
-      SKILL.md                     # Core principles + YAML frontmatter
-      references/                  # Optional: detailed reference docs
-install.sh                         # Symlink installer (~/.claude/agents, ~/.claude/skills)
-uninstall.sh                       # Remove symlinks
+.claude-plugin/marketplace.json    # Marketplace manifest: lists every plugin (no versions here)
+plugins/<plugin-name>/
+  .claude-plugin/plugin.json       # Per-plugin manifest; the plugin's `version` lives here
+  agents/<name>.md                 # Agent: YAML frontmatter + system prompt
+  skills/<skill-name>/SKILL.md     # Skill: slash command or knowledge base
+  skills/<skill-name>/references/  # Optional detail docs, read on demand
+install.sh / uninstall.sh          # Symlink installer into ~/.claude/agents, ~/.claude/skills
+README.md / README.zh-TW.md        # Mirrored EN / zh-TW docs; edit both together
 ```
 
-Both `marketplace.json` (root) and per-plugin `plugin.json` must exist for `/plugin` UI distribution; `install.sh` only reads the filesystem and ignores them.
+## Two install modes, different runtime behavior
 
-## Plugin Components
+| | `/plugin marketplace add xinqilin/claude-dev-toolkit-marketplace` | `./install.sh` (symlinks) |
+|---|---|---|
+| Plugin list comes from | `marketplace.json` + each `plugin.json` | hardcoded `PLUGINS` array; manifests ignored |
+| Skill command | `/<plugin>:<skill>` (namespaced) | `/<skill>` as a personal skill; replaces a bundled command of the same name (`code-review` shadows built-in `/code-review`) |
+| Agent `permissionMode` | ignored, like `hooks`, `mcpServers`, `initialPrompt` | honored (loaded as a user agent) |
+| Users receive a change when | it is pushed **and** `version` in plugin.json is bumped; otherwise they keep the cached copy | they `git pull` and start a new session |
 
-| Component | Location | Trigger | Purpose |
-|-----------|----------|---------|---------|
-| Agent | `agents/*.md` | Auto (conversation context) | Interactive assistance |
-| Skill | `skills/*/SKILL.md` | `/name` or auto (topic detection) | Slash command or knowledge base |
-
-## Key Files to Modify
-
-- **Add new plugin**: Create folder under `plugins/`, define `agents/` and/or `skills/`
-- **Modify plugin behavior**: Edit the corresponding `.md` file in agents or skills
-- **Add new skill/command**: Create `skills/<name>/SKILL.md` with proper YAML frontmatter
-
-## YAML Frontmatter Fields
-
-Agent files (`agents/*.md`):
-- `name`, `description`, `tools`
-- `maxTurns` - cap on conversation turns the agent may run
-- `permissionMode` - e.g. `acceptEdits` for developer agents, omit for read-only reviewers
-- `color` - UI hint shown in agent picker
-- `skills` - preload skills into agent context on startup
-- `memory` - persistence level (`project` for cross-session learning)
-- `disallowedTools` - explicitly forbid tools (e.g. reviewers forbid Edit, Write)
-
-Skill files (`skills/*/SKILL.md`):
-- `name` - determines the `/name` slash command
-- `description` - trigger conditions
-- `argument-hint` - shown in autocomplete
-- `allowed-tools` - optional
-- `user-invocable` - set `false` for knowledge-base skills (hidden from `/` menu)
-- `context` - set `fork` for heavy skills that should run in isolated context
-
-## Installation
-
-Two approaches (both work):
-
-**Via `/plugin` UI** (no clone needed):
-```
-/plugin marketplace add xinqilin/claude-dev-toolkit-marketplace
-```
-
-**Via `install.sh`** (after cloning, uses symlinks — auto-updates on `git pull`):
-```bash
-./install.sh --all              # Install all plugins
-./install.sh --plugin <name>    # Install one plugin
-./install.sh --list             # List available plugins
-./uninstall.sh                  # Remove all symlinks
-```
-
-Symlinks target `~/.claude/agents/` and `~/.claude/skills/`.
-
-## Verifying Changes
-
-There is no build/test/lint pipeline — a plugin is correct when JSON parses, frontmatter is valid, and symlinks point to this repo.
+## Commands
 
 ```bash
-./install.sh --list                                     # Enumerate plugins + agents + skills
-jq . .claude-plugin/marketplace.json                    # Validate marketplace manifest
-find plugins -name plugin.json -exec jq . {} \;         # Validate every plugin.json
-ls -l ~/.claude/agents ~/.claude/skills | grep $(pwd)   # Confirm symlinks point here
+claude plugin validate .                                            # marketplace.json only (1 known warning: no description)
+for p in plugins/*/; do claude plugin validate --strict "$p"; done  # plugin.json + agent frontmatter
+claude --plugin-dir ./plugins                                       # load all plugins as plugins for one session; no install, no push
+claude --plugin-dir ./plugins plugin details <plugin>               # component inventory + projected token cost
+./install.sh --list | --all | --plugin <name>                       # symlink install
+./uninstall.sh                                                      # remove symlinks that point into this repo
+ls -l ~/.claude/agents ~/.claude/skills | grep "$(pwd)"             # confirm symlinks
 ```
 
-After editing an agent/skill that's already symlinked, no reinstall is needed — open a new Claude Code session and the change is picked up.
+`validate` catches agent frontmatter that fails to parse (such an agent still loads, with every field dropped). It does not catch SKILL.md frontmatter errors, misspelled field names, or fields a mode ignores; check those by eye.
+
+## Adding or renaming a plugin or skill
+
+The plugin list is duplicated; keep all of these in sync:
+1. `plugins/<name>/` with `.claude-plugin/plugin.json`
+2. Its entry in `.claude-plugin/marketplace.json`
+3. The `PLUGINS` array in **both** `install.sh` and `uninstall.sh`
+4. `README.md`, `README.zh-TW.md`, and "Current Plugins" below
+
+- install.sh flattens all plugins into `~/.claude/skills/<dir>` and `~/.claude/agents/<file>`, so names must be unique across plugins and avoid bundled command names. An existing symlink of the same name is silently repointed (`[update]`); a real file or dir is skipped (`[warn]`).
+- Don't add `agents` or `commands` paths to plugin.json: a custom path replaces the default directory scan, so a second agent would be silently ignored. A `skills` path only adds to the default scan.
+
+## Frontmatter and file conventions
+
+- Agents: `name`, `description`, `tools`, `maxTurns: 30`, `color`, `memory: project`, `skills` (preload). Reviewers add `disallowedTools: Edit, Write, NotebookEdit` and `permissionMode: plan`; the developer agent uses `permissionMode: acceptEdits` (install.sh mode only). Body ends with a `## Memory Usage` section and "All output must be in Traditional Chinese".
+- Skills: `name` (= the command), `description` (trigger conditions: "Use when..."), `argument-hint`, `allowed-tools`. Knowledge-base skills set `user-invocable: false` (hidden from `/`; Claude can still load them). Heavy skills set `context: fork`. Every SKILL.md has `## When to Apply` and `## Gotchas`.
+- No `model` field anywhere: removed on purpose so the caller's session model runs everything.
+
+## Orchestration Pattern
+
+- Agent = persona + workflow + 輸出格式；Skill = 領域知識（preload 或 slash command）。
+- Agent 的 `skills` frontmatter 在啟動時注入整份 skill 內容，所以 preload 的 skill 要精簡（~150–200 行），細節放 `references/`。`bill-code-reviewer`、`bill-java-developer` preload 的 skill 全在**另一個 plugin** `bill-java-skills`；沒裝它時 preload 會被靜默跳過（只記在 debug log）。
+- Skill 與 agent 沒有硬連結：只靠 agent `description` 的「Use PROACTIVELY when /xxx is invoked」引導主模型委派。`context: fork` 的 skill（`review-pr`、`optimize-query`）沒設 `agent:`，實際跑在 general-purpose subagent，拿不到 agent 的 persona 與 preload skill。
 
 ## Gotchas
 
 - `.claude-plugin/marketplace.json` 和 `plugin.json` 必須保留：`/plugin` UI 依賴這些檔案
-- `/plugin` 讀取 GitHub repo，本地改動需 push 後才生效
+- `version` 只寫在 plugin.json；marketplace entry 也寫的話，runtime 會靜默採用 plugin.json 的值
 - `install.sh` 寫入 `~/.claude/`，在沙盒模式下需要 `dangerouslyDisableSandbox: true`
-- command → skill 轉換：在 frontmatter 加 `name` 欄位即可，其餘欄位照搬
-
-## Orchestration Pattern
-
-Agents preload skills via `skills` frontmatter. This means:
-- Agent = persona + workflow + output format
-- Skill = domain knowledge (preloaded or slash command)
-- Agent 啟動 → skills 自動注入 → agent 獲得領域知識，無需使用者手動觸發
-
-Example: `bill-java-developer` preloads `effective-java`, `clean-architecture`, `mysql-optimization`.
 
 ## Current Plugins
 
-1. **bill-billing-unit-test-reviewer** - Unit test review (`/review-test`)
-2. **bill-code-reviewer** - Code review (`/code-review`, `/review-pr`)
-3. **bill-java-developer** - Spring Boot dev (`/design-solution`, `/optimize-query`)
-4. **bill-java-skills** - Knowledge-base skills (preloaded by agents, not in `/` menu): clean-architecture, effective-java, mysql-optimization
+1. **bill-billing-unit-test-reviewer**: agent + `/review-test`
+2. **bill-code-reviewer**: agent (preloads effective-java, clean-architecture) + `/code-review`, `/review-pr`
+3. **bill-java-developer**: agent (preloads effective-java, clean-architecture, mysql-optimization) + `/design-solution`, `/optimize-query`
+4. **bill-java-skills**: knowledge-base skills only: clean-architecture, effective-java, mysql-optimization
