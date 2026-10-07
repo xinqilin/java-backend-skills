@@ -7,6 +7,8 @@ maxTurns: 30
 color: green
 skills:
   - java-backend:sql-performance
+  - java-backend:transactions-consistency
+  - java-backend:jpa-hibernate
   - java-backend:spring-boot-baseline
 ---
 

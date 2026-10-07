@@ -1,322 +1,90 @@
-# MySQL Index Design Guide
+# Index Design for MySQL (InnoDB) and PostgreSQL
 
-## B+Tree Index Structure
+## How each database stores a table
 
-```
-                    [Root Node]
-                   /     |     \
-            [Branch]  [Branch]  [Branch]
-           /   |   \
-      [Leaf] [Leaf] [Leaf] → [Leaf] → [Leaf]  (Linked list)
-       ↓       ↓       ↓
-    [Data]  [Data]  [Data]  (Row pointers or data in InnoDB)
-```
+| | MySQL InnoDB | PostgreSQL |
+|---|---|---|
+| Table storage | The clustered index: rows stored in primary-key order | A heap: rows in no particular order |
+| Secondary index entry | Index columns + **primary key** columns; lookups go through the clustered index | Index columns + a pointer to the heap row |
+| Covering ("index-only") | Any secondary index already carries the PK. `EXPLAIN` shows `Using index` | Add payload columns with `INCLUDE (...)`. Also needs the visibility map (kept by `VACUUM`) to skip heap visits |
+| Implication | Keep the primary key short: it is repeated in every secondary index | `UPDATE`s that change no indexed column can stay heap-only (HOT) and avoid index maintenance |
 
-### Key Properties
+## Composite index column order
 
-- **Balanced**: All leaf nodes at same depth
-- **Sorted**: Keys in order within nodes
-- **Linked**: Leaf nodes form linked list (range scans efficient)
-- **B+Tree in InnoDB**: Clustered index stores actual row data
-
----
-
-## Clustered vs Secondary Index
-
-### Clustered Index (Primary Key)
-
-```
-Primary Key Index (Clustered):
-┌─────────────────────────────────────┐
-│ id=1 │ customer │ total │ status │  ← Actual row data
-│ id=2 │ customer │ total │ status │
-│ id=3 │ customer │ total │ status │
-└─────────────────────────────────────┘
-```
-
-### Secondary Index
-
-```
-Secondary Index on customer_id:
-┌────────────────────────┐
-│ customer_id │ id (PK)  │  ← Only index columns + PK
-│ C001        │ 1        │
-│ C001        │ 5        │
-│ C002        │ 2        │
-└────────────────────────┘
-        ↓
-   Lookup by PK to get full row (unless covering index)
-```
-
----
-
-## Composite Index Design
-
-### The Leftmost Prefix Rule
-
-```sql
--- Index: (a, b, c)
-
--- Uses index fully
-WHERE a = 1 AND b = 2 AND c = 3  ✓
-WHERE a = 1 AND b = 2            ✓
-WHERE a = 1                      ✓
-
--- Uses partial index
-WHERE a = 1 AND c = 3            ✓ (only 'a' used, 'c' filtered after)
-
--- Cannot use index
-WHERE b = 2 AND c = 3            ✗ (missing leftmost 'a')
-WHERE c = 3                      ✗
-```
-
-### Column Order Strategy
-
-**1. Equality Conditions First**
+Rule: **equality columns first (any order among them), then at most one range or sort column.**
 
 ```sql
 -- Query
-WHERE status = 'PENDING' AND customer_id = ?
+SELECT * FROM orders
+WHERE customer_id = ? AND status = ? AND created_at >= ?
+ORDER BY created_at;
 
--- Good: Most selective equality condition first
-INDEX (customer_id, status)  -- customer_id likely more selective
-
--- Check selectivity
-SELECT
-    COUNT(DISTINCT customer_id) / COUNT(*) as cust_sel,  -- e.g., 0.9
-    COUNT(DISTINCT status) / COUNT(*) as status_sel      -- e.g., 0.001
-FROM orders;
+-- Index: two equalities, then the range/sort column
+CREATE INDEX idx_orders_cust_status_created ON orders (customer_id, status, created_at);
 ```
 
-**2. Range Conditions Last**
+- PostgreSQL documents the exact rule: equality constraints on leading columns, plus an inequality on the first column without an equality, limit the scanned part of the index. Constraints on columns to the right are checked inside the index; they save heap visits but don't shrink the scan.
+- MySQL: an index on `(a, b, c)` is usable for `a`, `a, b`, and `a, b, c` (leftmost prefix). With `a = 1 AND b > 10 AND c = 5`, the range on `b` ends the usable prefix, and `c` is only filtered.
+- PostgreSQL 18 adds B-tree **skip scan**: it can apply conditions on later columns even when an earlier column has no equality constraint, by generating the earlier column's values internally. It helps when that column has few distinct values. Don't design new indexes around it.
+
+### Why "most selective first" is the wrong rule
+
+Distinct-value counts don't decide the order: how the query constrains each column does. With `(status, customer_id)` and `(customer_id, status)`, the query `status = ? AND customer_id = ?` performs the same on both, since both are equality prefixes. What matters is which index also serves your **other** queries (leftmost prefixes) and which column carries the range or sort.
+
+## Sorting and LIMIT through the index
 
 ```sql
--- Query
-WHERE customer_id = ? AND created_at > ? AND created_at < ?
-
--- Good: Equality before range
-INDEX (customer_id, created_at)
-
--- Query with range on multiple columns
-WHERE customer_id = ? AND price > 100 AND created_at > '2024-01-01'
-
--- Only one range can use index efficiently
-INDEX (customer_id, price, created_at)  -- price range used, created_at filtered
--- OR
-INDEX (customer_id, created_at, price)  -- created_at range used, price filtered
--- Choose based on which range is more selective
+-- Wants (customer_id, created_at): reads 20 index entries, no sort
+SELECT * FROM orders WHERE customer_id = ? ORDER BY created_at DESC LIMIT 20;
 ```
 
-**3. ORDER BY / GROUP BY Consideration**
+- Without a usable index, both databases sort every matching row before applying `LIMIT` (MySQL shows `Using filesort`; PostgreSQL shows a `Sort` node).
+- Mixed directions (`ORDER BY a ASC, b DESC`) need an index declared with matching directions. MySQL supports descending index parts (`DESC` in the key definition), and so does PostgreSQL.
+
+## Covering indexes
 
 ```sql
--- Query
-WHERE customer_id = ? ORDER BY created_at DESC
+-- MySQL: idx (customer_id, status) already contains the PK, so this query never reads the table
+SELECT id, status FROM orders WHERE customer_id = ?;
 
--- Good: Index supports both filter and sort
-INDEX (customer_id, created_at)  -- avoids filesort
-
--- Query with different sort direction
-WHERE customer_id = ? ORDER BY created_at DESC, total ASC
-
--- Index must match sort directions
-INDEX (customer_id, created_at DESC, total ASC)  -- MySQL 8.0+
+-- PostgreSQL: carry extra columns without making them part of the key
+CREATE INDEX idx_orders_customer ON orders (customer_id) INCLUDE (status, total);
 ```
 
----
+Covering pays off for hot, narrow queries. Don't widen every index: each extra column costs space and write I/O.
 
-## Covering Index
-
-### What It Does
-
-A covering index contains all columns needed by the query, eliminating the need to access the actual table rows.
+## Expressions and partial indexes
 
 ```sql
--- Query
-SELECT order_id, status, total
-FROM orders
-WHERE customer_id = ? AND created_at > ?;
+-- Function on the column: index the expression instead of rewriting every query
+CREATE INDEX idx_users_email_lower ON users ((lower(email)));   -- MySQL functional key part (double parentheses)
+CREATE INDEX idx_users_email_lower ON users (lower(email));     -- PostgreSQL expression index
 
--- Non-covering index
-INDEX (customer_id, created_at)
--- Process: Find matching index entries → Lookup each row by PK → Return columns
-
--- Covering index
-INDEX (customer_id, created_at, order_id, status, total)
--- Process: Find matching index entries → Return columns directly (no row lookup)
+-- PostgreSQL partial index: index only the rows a hot query touches
+CREATE INDEX idx_orders_pending ON orders (created_at) WHERE status = 'PENDING';
 ```
 
-### EXPLAIN Output
+MySQL has no partial indexes; a generated column plus a regular index is the usual substitute.
 
-```sql
-EXPLAIN SELECT order_id, status FROM orders WHERE customer_id = ?;
+## Low-cardinality columns
 
--- Non-covering: Extra shows nothing or "Using where"
--- Covering: Extra shows "Using index"
-```
+A boolean or a five-value status column alone rarely helps: the index would match a large share of the table, and the planner prefers a scan. It is fine as an equality **prefix** of a composite index, and in PostgreSQL as the predicate of a partial index.
 
-### Trade-offs
+## Write cost and index hygiene
 
-| Pros | Cons |
-|------|------|
-| Eliminates row lookups | Larger index size |
-| Faster SELECT | Slower INSERT/UPDATE |
-| Reduces I/O | More memory for caching |
+- Every index is updated on every insert, and on updates that change its columns. Measure before adding a sixth index to a write-heavy table.
+- Remove redundant indexes. An index on `(a)` is redundant next to `(a, b)` unless it is unique or used for a constraint.
+- MySQL: make a candidate `INVISIBLE` first. The optimizer stops using it, but it is still maintained (a unique index still rejects duplicates), so you can make it visible again instantly if a query regresses. The primary key cannot be made invisible.
+- PostgreSQL: `pg_stat_user_indexes.idx_scan` shows indexes never used since statistics were last reset.
 
----
+## Sources
 
-## Index for Common Patterns
-
-### Pattern 1: Exact Match + Range
-
-```sql
-WHERE user_id = ? AND created_at BETWEEN ? AND ?
-
-INDEX (user_id, created_at)
-```
-
-### Pattern 2: Multiple Equality
-
-```sql
-WHERE status = ? AND type = ? AND region = ?
-
--- Order by selectivity (most selective first)
-INDEX (region, type, status)  -- if region is most selective
-```
-
-### Pattern 3: IN Clause
-
-```sql
-WHERE status IN ('PENDING', 'PROCESSING') AND customer_id = ?
-
--- IN is treated as multiple equality conditions
-INDEX (status, customer_id)  -- OR
-INDEX (customer_id, status)  -- depends on selectivity
-```
-
-### Pattern 4: LIKE Prefix
-
-```sql
-WHERE name LIKE 'John%'  -- Can use index
-WHERE name LIKE '%John'  -- Cannot use index
-WHERE name LIKE '%John%' -- Cannot use index
-
-INDEX (name)  -- Only works for prefix LIKE
-```
-
-### Pattern 5: NULL Handling
-
-```sql
-WHERE deleted_at IS NULL  -- Can use index
-WHERE deleted_at IS NOT NULL  -- Can use index
-
-INDEX (deleted_at)
-```
-
----
-
-## Index Maintenance
-
-### Finding Unused Indexes
-
-```sql
--- MySQL 8.0+ with sys schema
-SELECT *
-FROM sys.schema_unused_indexes
-WHERE object_schema = 'your_database';
-```
-
-### Finding Redundant Indexes
-
-```sql
--- Index (a, b) makes (a) redundant
-SELECT *
-FROM sys.schema_redundant_indexes
-WHERE table_schema = 'your_database';
-```
-
-### Index Statistics
-
-```sql
--- Check index cardinality
-SHOW INDEX FROM orders;
-
--- Update statistics
-ANALYZE TABLE orders;
-```
-
-### Index Size
-
-```sql
-SELECT
-    table_name,
-    index_name,
-    ROUND(stat_value * @@innodb_page_size / 1024 / 1024, 2) AS size_mb
-FROM mysql.innodb_index_stats
-WHERE stat_name = 'size'
-  AND database_name = 'your_database'
-ORDER BY stat_value DESC;
-```
-
----
-
-## Common Mistakes
-
-### 1. Over-Indexing
-
-```sql
--- Too many indexes slow down writes
-CREATE INDEX idx1 ON orders (customer_id);
-CREATE INDEX idx2 ON orders (customer_id, status);  -- idx1 is redundant!
-CREATE INDEX idx3 ON orders (customer_id, status, created_at);  -- idx2 is redundant!
-
--- Keep only idx3
-```
-
-### 2. Low Selectivity Leading Column
-
-```sql
--- Bad: status has only 5 distinct values
-INDEX (status, customer_id)
-
--- Good: customer_id has high selectivity
-INDEX (customer_id, status)
-```
-
-### 3. Function on Indexed Column
-
-```sql
--- Cannot use index
-WHERE YEAR(created_at) = 2024
-
--- Can use index
-WHERE created_at >= '2024-01-01' AND created_at < '2025-01-01'
-
--- Cannot use index
-WHERE LOWER(email) = 'test@example.com'
-
--- Solution: Generated column + index
-ALTER TABLE users ADD email_lower VARCHAR(255) GENERATED ALWAYS AS (LOWER(email)) STORED;
-CREATE INDEX idx_email_lower ON users (email_lower);
-```
-
-### 4. Type Mismatch
-
-```sql
--- Column is VARCHAR, but comparing to INT
-WHERE customer_id = 12345  -- Index may not be used
-
--- Match the type
-WHERE customer_id = '12345'
-```
-
----
-
-## Index Design Checklist
-
-1. **Identify query patterns** - Which columns in WHERE, ORDER BY, GROUP BY?
-2. **Check selectivity** - High selectivity columns should lead
-3. **Consider covering** - Can we include SELECT columns?
-4. **Test with EXPLAIN** - Verify index is used
-5. **Monitor unused indexes** - Remove if not used
-6. **Balance read/write** - More indexes = slower writes
+- MySQL 8.4, Clustered and Secondary Indexes: https://dev.mysql.com/doc/refman/8.4/en/innodb-index-types.html
+- MySQL 8.4, Multiple-Column Indexes (leftmost prefix): https://dev.mysql.com/doc/refman/8.4/en/multiple-column-indexes.html
+- MySQL 8.4, CREATE INDEX (functional key parts, `ASC`/`DESC`): https://dev.mysql.com/doc/refman/8.4/en/create-index.html
+- MySQL 8.4, Invisible Indexes: https://dev.mysql.com/doc/refman/8.4/en/invisible-indexes.html
+- PostgreSQL 18, Multicolumn Indexes (scan rule, skip scan): https://www.postgresql.org/docs/current/indexes-multicolumn.html
+- PostgreSQL 18, Index-Only Scans and Covering Indexes: https://www.postgresql.org/docs/current/indexes-index-only-scans.html
+- PostgreSQL 18, Partial Indexes: https://www.postgresql.org/docs/current/indexes-partial.html
+- PostgreSQL 18, Indexes and ORDER BY: https://www.postgresql.org/docs/current/indexes-ordering.html
+- PostgreSQL 18, Heap-Only Tuples (HOT): https://www.postgresql.org/docs/current/storage-hot.html

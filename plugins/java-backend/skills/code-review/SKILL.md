@@ -22,7 +22,7 @@ Review `$ARGUMENTS` (or, if empty, the files changed in the working tree: `git d
 
 ### 1. Data access and transactions (highest impact)
 
-Load `java-backend:jpa-hibernate` and `java-backend:transactions-consistency` with the Skill tool when the code touches repositories, entities, or `@Transactional`.
+Apply the preloaded `java-backend:jpa-hibernate` and `java-backend:transactions-consistency` knowledge when the code touches repositories, entities, or `@Transactional`.
 
 - Read-modify-write on shared rows without a version column, lock, or atomic update
 - `@Transactional` self-invocation (calls inside the same class bypass the proxy)

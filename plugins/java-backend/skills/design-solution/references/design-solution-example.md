@@ -1,103 +1,131 @@
-# Design Solution 完整範例
+# Design Solution: Worked Example
+
+This example shows the expected depth. Real output follows the user's language.
+
+## Input
+
+> Flash-sale coupons: a campaign issues 1,000 coupons, each user may redeem at most one, and traffic peaks for a few minutes at the start. We must never issue more than 1,000. Mobile clients retry on timeout.
+>
+> Stack (from Step 0): Spring Boot 4.1, Spring Data JPA (Hibernate 7.4), PostgreSQL 18.
 
 ## Requirement
 
-> I need an API for users to upload images. Images should be stored in S3, and users should be able to query all their uploaded images.
+### Summary
+A redemption endpoint that issues at most `total` coupons per campaign, at most one per user, and is safe under client retries and concurrent requests.
 
-## Output (in Traditional Chinese)
-
-## 需求理解
-
-### 功能說明
-建立圖片上傳功能，使用者可以上傳圖片到 S3，並提供查詢 API 列出該使用者所有上傳的圖片。
-
-### 澄清問題
-1. 圖片大小限制？建議限制 10MB
-2. 允許的圖片格式？建議 JPG, PNG, GIF
-3. 是否需要圖片縮圖功能？
-4. 圖片存取權限？公開還是需要認證？
+### Clarifying questions
+1. Expected peak requests per second, and for how long? (drives whether the single counter row is enough)
+2. Must a redemption notify other systems (wallet, push notification)? (drives whether an outbox is needed)
+3. Should a user who lost the race see "sold out" or be queued?
 
 ---
 
-## 技術建議
+## Recommendation
 
-### 建議方案
-使用 Spring Boot + AWS S3 SDK，資料庫記錄圖片 metadata。
+### Proposed approach
+One database transaction per redemption: insert the redemption row (unique constraints reject duplicates), then decrement the campaign counter with a conditional `UPDATE` that refuses to go below zero. Idempotency keys make client retries replay the original response.
 
-### 為什麼選擇這個方案
-- S3 是成熟的物件儲存方案，成本低、可靠性高
-- 不佔用應用伺服器儲存空間
-- 支援 CDN 整合，可加速圖片載入
+### Why this approach
+- The conditional `UPDATE ... WHERE remaining > 0` is evaluated by the database against the latest committed row, so it cannot oversell under PostgreSQL's default READ COMMITTED (or InnoDB's default REPEATABLE READ).
+- Unique constraints enforce "one per user" even for concurrent requests that both passed an application-level check.
+- No distributed locks, no extra infrastructure.
+
+### Alternatives considered
+- **Pre-generated coupon rows claimed with `FOR UPDATE SKIP LOCKED`**: no single hot row, so it scales further. It costs 1,000 rows per campaign and a claim query. Switch to this if load tests show lock waits on the campaign row dominating.
+- **Counter in Redis**: fast, but now two stores must agree. Rejected until the database is measured to be the bottleneck.
 
 ---
 
-## 架構設計
+## Design
 
-### 系統架構
-Controller → ImageService → S3Client + ImageRepository
+### Data model
+```sql
+CREATE TABLE coupon_campaign (
+    id        bigint PRIMARY KEY,
+    total     int NOT NULL,
+    remaining int NOT NULL CHECK (remaining >= 0),
+    starts_at timestamptz NOT NULL,
+    ends_at   timestamptz NOT NULL
+);
 
-### 資料模型
+CREATE TABLE coupon_redemption (
+    id          bigint PRIMARY KEY,                    -- sequence, allocationSize 50
+    campaign_id bigint NOT NULL REFERENCES coupon_campaign (id),
+    user_id     bigint NOT NULL,
+    idem_key    varchar(64) NOT NULL UNIQUE,
+    created_at  timestamptz NOT NULL,
+    UNIQUE (campaign_id, user_id)                      -- one per user; also serves lookups by campaign
+);
+```
+
+### Consistency and concurrency
+| Write path | Risk | Guard | Isolation level |
+|------------|------|-------|-----------------|
+| Decrement `remaining` | Oversell (lost update) | `UPDATE ... SET remaining = remaining - 1 WHERE id = ? AND remaining > 0`; 0 rows → sold out | READ COMMITTED (default). At REPEATABLE READ, concurrent decrements fail with 40001 and need retries |
+| One coupon per user | Double redemption from concurrent requests | `UNIQUE (campaign_id, user_id)` | Any |
+| Client retry after timeout | Same effect applied twice | `UNIQUE (idem_key)`; replay the stored redemption | Any |
+
+Order inside the transaction: insert the redemption first, so duplicates fail before touching the hot row. Decrement last, so the campaign row lock is held only until commit.
+
 ```java
-@Entity
-public class Image {
-    private Long id;
-    private Long userId;
-    private String s3Key;
-    private String fileName;
-    private Long fileSize;
-    private LocalDateTime createdAt;
+@Transactional
+public CouponRedemption redeem(long campaignId, long userId, String idemKey) {
+    CouponRedemption r = redemptionRepository.saveAndFlush(CouponRedemption.of(campaignId, userId, idemKey));
+    if (campaignRepository.decrementRemaining(campaignId) == 0) {
+        throw new SoldOutException(campaignId);   // unchecked: rolls back the inserted redemption
+    }
+    return r;
 }
 ```
 
-### API 設計
-- `POST /api/images` — 上傳圖片（multipart/form-data）
-- `GET /api/images` — 列出當前使用者的圖片
+In PostgreSQL, any error aborts the whole transaction. Handle `DataIntegrityViolationException` outside it: in the controller or a facade, look up the redemption by `idem_key` in a new transaction to replay it, or return 409 for "already redeemed".
+
+### API
+- `POST /campaigns/{id}/redemptions` with an `Idempotency-Key` header
+- `201` created; `200` replay of the same key; `409` already redeemed by this user; `410` sold out or campaign ended
 
 ---
 
-## 實作 Todo List
+## Implementation plan
 
-### Phase 1: 基礎建設 (1 天)
-- [ ] 新增 AWS S3 SDK 依賴 (`software.amazon.awssdk:s3`)
-- [ ] 設定 S3 連線參數 (application.yml: `aws.s3.bucket`, `aws.region`)
-- [ ] 建立 S3Client Bean
+### Phase 1: Foundation
+- [ ] Flyway `V1__coupon.sql`: both tables, constraints, sequence `coupon_redemption_seq INCREMENT BY 50`
+- [ ] Entities `CouponCampaign`, `CouponRedemption` (sequence generator, `allocationSize = 50`)
 
-### Phase 2: 核心功能 (2 天)
-- [ ] 建立 `Image` Entity (id, userId, s3Key, fileName, fileSize, createdAt)
-- [ ] 建立 `ImageRepository extends JpaRepository<Image, Long>`
-- [ ] 實作 `ImageService.upload(MultipartFile, Long userId)` — 上傳到 S3，存 metadata
-- [ ] 實作 `ImageService.listByUser(Long userId)` — 查詢列表
-- [ ] 建立 `ImageController` (POST /api/images, GET /api/images)
-- [ ] 新增 `@ControllerAdvice` 處理 S3 和檔案大小例外
+### Phase 2: Core feature
+- [ ] `CouponCampaignRepository.decrementRemaining(long id)`: `@Modifying` JPQL conditional update returning `int`
+- [ ] `RedemptionService.redeem(...)`: `@Transactional`, insert then decrement as above
+- [ ] `RedemptionFacade`: translates `DataIntegrityViolationException` into a replay or 409, outside the transaction
+- [ ] `RedemptionController` with the `Idempotency-Key` header
 
-### Phase 3: 整合測試 (1 天)
-- [ ] 撰寫 `ImageServiceTest` (mock S3Client)
-- [ ] 撰寫 `ImageControllerTest` (@WebMvcTest)
-- [ ] 手動測試完整流程
+### Phase 3: Tests
+- [ ] `RedemptionServiceIT` with Testcontainers PostgreSQL: 50 threads × 40 users racing on a campaign of 1,000. Assert exactly 1,000 redemptions, no user twice, `remaining = 0`, and no negative values.
+- [ ] Same user, two concurrent requests: one 201 and one 409 or replay
+- [ ] Same idempotency key twice: the second returns the first result
 
 ---
 
-## 注意事項
+## Risks and edge cases
 
-### 潛在風險
-1. **S3 連線失敗**：加入 retry 機制，回傳有意義的錯誤訊息
+### Risks
+1. The campaign row is a hot spot: every redemption serializes on its lock. Load-test at the expected peak; if lock waits dominate (check `pg_stat_activity` wait events), switch to pre-generated rows with `SKIP LOCKED`.
 
-### 邊界情況
-1. **檔案名稱含特殊字元**：上傳時產生 UUID 作為 S3 key
-2. **重複上傳**：允許，用不同的 key 儲存
+### Edge cases
+1. A request arrives after `ends_at`: reject before any write.
+2. The same idempotency key with a different payload: return 422, never the stored response.
 
-### 安全性考量
-- 上傳前驗證 Content-Type（防止偽造）
-- 設定合理的 `spring.servlet.multipart.max-file-size: 10MB`
-- S3 bucket 設定適當的 ACL
+### Performance
+Short transactions, two statements plus a commit; no remote calls inside.
+
+### Security
+Authenticate the user id from the token; never accept it from the request body.
 
 ---
 
-## 預估工時
+## Rough effort
 
-| 階段 | 預估時間 | 說明 |
-|------|----------|------|
-| Phase 1 | 0.5 天 | S3 設定 |
-| Phase 2 | 2 天 | 核心功能 |
-| Phase 3 | 1 天 | 測試 |
-| **總計** | **3.5 天** | |
+| Phase | Relative size (S/M/L) | Notes |
+|-------|-----------------------|-------|
+| Foundation | S | Two tables, two entities |
+| Core feature | M | Facade and error translation need care |
+| Tests | M | The concurrency test is the proof that the guards work |

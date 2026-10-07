@@ -1,163 +1,82 @@
 ---
 name: sql-performance
-description: MySQL and PostgreSQL query performance for Spring Boot apps (index design, execution plans, query patterns). Use when reviewing database access code, designing indexes, or reading EXPLAIN output.
+description: MySQL and PostgreSQL query performance for Spring Boot apps (index design, execution plans, query patterns, online schema changes, connection pool sizing). Use when reviewing database access code, designing indexes, or reading EXPLAIN output.
 user-invocable: false
 allowed-tools: Read, Grep, Glob
 ---
 
-# MySQL Performance Optimization
+# SQL Performance for MySQL and PostgreSQL
 
-## Index Design Principles
+Measure first, then fix in this order: round trips (N+1), index fit, query shape, and only then the data model. Identify the database and version first: InnoDB and PostgreSQL store tables differently, so index advice that is right for one can be wrong for the other.
 
-### Composite Index Column Order
+## Step 1: Find the expensive statements
 
-**Rule: Equality first, Range last, ORDER BY in between**
+- **MySQL**: the slow query log, or the Performance Schema statement digests (`sys.statement_analysis`). `SHOW PROFILE` / `SHOW PROFILES` are deprecated in favor of the Performance Schema.
+- **PostgreSQL**: the `pg_stat_statements` extension. It must be loaded through `shared_preload_libraries`, which needs a server restart.
+- **Application side**: count the statements per request in tests (`org.hibernate.SQL` logging or Hibernate statistics). Many small queries usually mean N+1 (`java-backend:jpa-hibernate`), not a missing index.
 
-```sql
--- Query: customer_id = equality, status = equality, created_at > = range
--- Optimal index: equality columns first, range column last
-CREATE INDEX idx_orders_customer_status_created
-ON orders (customer_id, status, created_at);
-```
+## Step 2: Read the real plan
 
-**Index stops working after range condition**: `(a, b, c, d)` with `WHERE a=1 AND b>10 AND c=5` — only a and b are used. c is skipped because b is a range.
+- **MySQL**: `EXPLAIN` gives estimates; `EXPLAIN ANALYZE` runs the statement and adds actual timing and row counts per iterator; `EXPLAIN FORMAT=TREE` shows the iterator tree.
+- **PostgreSQL**: `EXPLAIN (ANALYZE, BUFFERS)` runs the statement and shows actual rows, time, and buffer hits and reads per node. For DML, wrap it in `BEGIN; ... ROLLBACK;`, because `ANALYZE` really executes the statement.
+- Compare estimated with actual rows. A large mismatch points to stale or missing statistics (`ANALYZE TABLE` in MySQL, `ANALYZE` in PostgreSQL) before it points to a missing index.
 
-### Covering Index
+Reading plans per database: `references/mysql.md`, `references/postgresql.md`.
 
-Include all SELECT columns in the index to avoid table lookup. `EXPLAIN` shows `Using index` when covering index is hit.
+## Step 3: Make the index fit the query
 
-### Index Selectivity
+Both databases use B-tree indexes by default, and the same rules apply:
 
-High selectivity (many distinct values) = better index candidate.
-```sql
-SELECT COUNT(DISTINCT customer_id) / COUNT(*) AS selectivity FROM orders;
--- 0.85 = good candidate, 0.001 = poor candidate
-```
+1. **Equality columns first, then one range or sort column.** In PostgreSQL's words, equality constraints on the leading columns plus an inequality on the first column without an equality limit the scanned part of the index; constraints on columns further right are only checked inside it.
+2. **Leftmost prefix**: an index on `(a, b, c)` serves `a`, `a, b`, and `a, b, c`, but not `b` alone. PostgreSQL 18's B-tree skip scan can sometimes use later columns without a condition on `a`.
+3. **Sort through the index**: `WHERE customer_id = ? ORDER BY created_at DESC LIMIT 20` wants `(customer_id, created_at)`. The database then reads 20 index entries instead of sorting every match.
+4. **Covering**: when the index holds every column the query needs, the table isn't read. In InnoDB, every secondary index already contains the primary key. In PostgreSQL, use `INCLUDE (...)`; index-only scans also depend on the visibility map, which `VACUUM` maintains.
+5. **Selectivity is not the ordering rule.** Order columns by how the query constrains them (equality before range), not by distinct-value counts. A low-cardinality column alone rarely makes a useful index, but it is fine as an equality prefix. In PostgreSQL, a partial index (`WHERE status = 'PENDING'`) is often better.
+6. **Every index costs writes and memory.** Remove unused and redundant indexes. In MySQL, make an index `INVISIBLE` first to test dropping it safely.
 
----
+Details: `references/index-design.md`.
 
-## Query Optimization Patterns
+## Step 4: Fix the query shape
 
-### N+1 Problem
+- No functions or arithmetic on the indexed column (`YEAR(created_at) = 2024`): rewrite as a range, or index the expression (MySQL functional key parts, PostgreSQL expression indexes).
+- Match types: in MySQL, comparing a **string column with a number** (`WHERE varchar_col = 123`) cannot use the index on that column.
+- Use keyset pagination (`WHERE (created_at, id) < (?, ?) ORDER BY created_at DESC, id DESC LIMIT 20`) instead of large `OFFSET`s.
+- `NOT IN (subquery)` returns no rows when the subquery yields a `NULL`; use `NOT EXISTS`.
+- `OR` across different columns isn't automatically bad: MySQL can use Index Merge and PostgreSQL can combine indexes with bitmap scans. Check the plan before rewriting it into `UNION`.
 
-```java
-// BAD - N+1 queries (1 + N)
-List<Order> orders = orderRepository.findByCustomerId(customerId);
-for (Order order : orders) {
-    List<OrderItem> items = order.getItems();  // Lazy load = 1 query per order!
-}
-```
+Details: `references/query-patterns.md`.
 
-**Solutions:**
-```java
-// Solution 1: JOIN FETCH
-@Query("SELECT o FROM Order o JOIN FETCH o.items WHERE o.customerId = :customerId")
-List<Order> findByCustomerIdWithItems(@Param("customerId") String customerId);
+## Step 5: Change schemas without outages
 
-// Solution 2: @EntityGraph
-@EntityGraph(attributePaths = {"items", "items.product"})
-List<Order> findByCustomerId(String customerId);
+- **MySQL**: adding a secondary index is in-place and permits concurrent DML. Many column changes are `INSTANT`, but changing a column's data type copies the table and blocks DML. Every online DDL still needs a brief exclusive **metadata lock**: a long-running transaction on the table blocks the DDL, and the waiting DDL then blocks every later query on that table.
+- **PostgreSQL**: plain `CREATE INDEX` blocks writes until it finishes. `CREATE INDEX CONCURRENTLY` doesn't, but it can't run inside a transaction block, and a failed build leaves an `INVALID` index behind that must be dropped. `ADD COLUMN` with a non-volatile default doesn't rewrite the table. Set `lock_timeout` for migrations.
+- Flyway runs each migration in a transaction by default (`spring.flyway.execute-in-transaction=true`) and uses a transactional advisory lock on PostgreSQL. For a script containing `CREATE INDEX CONCURRENTLY`, set `executeInTransaction=false` in that script's configuration file, and if the lock gets in the way, set `spring.flyway.postgresql.transactional-lock=false`.
 
-// Solution 3: Batch fetching (application.yml)
-// spring.jpa.properties.hibernate.default_batch_fetch_size: 100
-```
+## Step 6: Size the connection pool
 
-### Keyset Pagination (vs OFFSET)
-
-OFFSET scans all preceding rows — becomes slow with large offsets.
-
-```java
-// BAD: OFFSET 200000 = MySQL scans 200,020 rows
-Page<Order> findAll(Pageable pageable);
-
-// GOOD: Keyset pagination - O(log n) regardless of page
-@Query("SELECT o FROM Order o WHERE o.id > :lastId ORDER BY o.id LIMIT :size")
-List<Order> findNextPage(@Param("lastId") Long lastId, @Param("size") int size);
-```
-
----
-
-## JPA/Hibernate Tuning
-
-### Fetch Strategy
-
-Always LAZY for collections. Consider LAZY for `@ManyToOne` to avoid joins when not needed.
-
-```java
-@Entity
-public class Order {
-    @ManyToOne(fetch = FetchType.LAZY)   // Single entity - LAZY to avoid unnecessary join
-    private Customer customer;
-
-    @OneToMany(fetch = FetchType.LAZY)   // Collection - ALWAYS LAZY
-    private List<OrderItem> items;
-}
-```
-
-### Batch Operations
-
-Enable in `application.yml`:
-```yaml
-spring.jpa.properties.hibernate.jdbc.batch_size: 50
-spring.jpa.properties.hibernate.order_inserts: true
-spring.jpa.properties.hibernate.order_updates: true
-```
-
-See **references/jpa-hibernate-tuning.md** for batch insert code template and connection pool config.
-
-### HikariCP Pool Size
-
-Formula: `CPU cores * 2 + disk spindles` (e.g., 4-core server = pool size 9).
-
----
-
-## EXPLAIN Analysis Quick Guide
-
-| Column | Good | Bad |
-|--------|------|-----|
-| type | const, eq_ref, ref | ALL, index |
-| rows | Low | High |
-| Extra | Using index | Using filesort, Using temporary |
-
-**Type values best to worst**: `const` → `eq_ref` → `ref` → `range` → `index` → `ALL`
-
-**Red flags**: `Using filesort` (needs index for ORDER BY), `Using temporary` (GROUP BY without index)
-
----
-
-## Code Review Checklist
-
-| Issue | Detection | Solution |
-|-------|-----------|----------|
-| N+1 Query | Multiple SELECTs per request in logs | JOIN FETCH, @EntityGraph, batch_fetch_size |
-| Full Table Scan | EXPLAIN type = ALL | Add appropriate index |
-| Large OFFSET | LIMIT x OFFSET large_number | Keyset pagination |
-| SELECT * | Fetching unused columns | Select only needed columns / projection |
-| Missing Index | Slow query log, EXPLAIN | Analyze query pattern, add index |
-| OR on different columns | Each OR = separate scan | UNION or redesign |
-
----
+A small pool with threads waiting for it beats a large pool that overloads the database. HikariCP's default is 10 connections; start from `(core_count * 2) + effective_spindle_count` and measure. Details, including virtual threads: `references/connection-pool.md`.
 
 ## When to Apply
 
-- 資料庫程式碼審查（index 設計、查詢模式）
-- JPA/Hibernate 效能調校
-- EXPLAIN plan 分析
-- 補充 /optimize-query 的領域知識
+- Reviewing repository methods, native queries, entity indexes, or migrations
+- A slow endpoint, a slow query log entry, or a plan to read
+- Designing indexes for new access patterns
+- Planning schema changes on large tables
+- Connection pool timeouts or pool sizing
 
 ## Gotchas
 
-<!-- 持續更新：遇到新的 Claude 常犯錯誤時加入 -->
+<!-- Keep adding mistakes Claude repeatedly makes. -->
 
-- **JOIN FETCH + Pageable 陷阱**：Spring Data 觸發 `HHH000104` 警告，Hibernate 先載入全表再記憶體分頁。改用子查詢取 ID 清單 + JOIN FETCH，或用 `@QueryHints` + `CountQuery`
-- **EXPLAIN 的 rows 是估計值**：用 `EXPLAIN ANALYZE` 看真實執行數據，兩者差距可達 10 倍
-- **batch_fetch_size 設太大**：`default_batch_fetch_size: 1000` 會產生巨大 `IN(...)` clause。`max_allowed_packet` 可能不足，建議 50-200
-- **MySQL 8.0 CTE 不做 materialization**：`WITH` 每次引用都重新執行（不像 PostgreSQL）。需要多次引用時改用臨時表
-- **@Transactional(readOnly=true) 不只是提示**：它啟用 Hibernate flush mode MANUAL，減少 dirty checking 開銷，對讀取量大的 API 有明顯效果
-- **COUNT(*) vs COUNT(1) 效能完全相同**：MySQL optimizer 都走相同路徑，不要浪費時間爭論
+- **"Most selective column first" is a myth for composite indexes**: put equality columns first and the range or sort column last.
+- **The type-conversion trap runs one way in MySQL**: `varchar_col = 123` can't use the index, while `int_col = '123'` can, because MySQL converts the constant.
+- **MySQL materializes a CTE once per query**: even when the query references it several times. PostgreSQL inlines a non-recursive, side-effect-free CTE that is referenced once, and materializes it otherwise (override with `MATERIALIZED` / `NOT MATERIALIZED`).
+- **`COUNT(*)` vs `COUNT(1)`**: no difference in InnoDB; don't spend review comments on it.
+- **`EXPLAIN` row counts are estimates**: confirm with `EXPLAIN ANALYZE` before concluding.
+- **Index advice from MySQL doesn't transfer verbatim**: the clustered primary key, the implicit primary key in every secondary index, and `Using index` are InnoDB concepts. PostgreSQL tables are heaps, and covering needs `INCLUDE` plus a well-vacuumed visibility map.
+- **Never `CREATE INDEX` on a busy PostgreSQL table without `CONCURRENTLY`**: it blocks all writes until it finishes.
+- **Don't invent numbers**: never predict "98% faster" or "10% slower writes"; state what to measure and how.
 
-## Additional Resources
+## Sources
 
-- **references/index-design.md** — B+Tree internals, composite index strategies, covering index design
-- **references/query-patterns.md** — Common patterns, anti-patterns, schema design tips
-- **references/jpa-hibernate-tuning.md** — Cache, batch insert code, connection pool tuning details
+See the Sources section at the end of each reference file.
