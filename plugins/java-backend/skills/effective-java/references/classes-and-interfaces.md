@@ -375,11 +375,11 @@ public final class PhysicalConstants {
 
 // Or enum for related constants
 public enum OrderStatus {
-    PENDING("待處理"),
-    CONFIRMED("已確認"),
-    SHIPPED("已出貨"),
-    DELIVERED("已送達"),
-    CANCELLED("已取消");
+    PENDING("Pending"),
+    CONFIRMED("Confirmed"),
+    SHIPPED("Shipped"),
+    DELIVERED("Delivered"),
+    CANCELLED("Cancelled");
 
     private final String displayName;
 

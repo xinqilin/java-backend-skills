@@ -5,6 +5,8 @@ tools: Read, Grep, Glob, Bash
 disallowedTools: Edit, Write, NotebookEdit
 maxTurns: 30
 color: cyan
+skills:
+  - java-backend:spring-boot-baseline
 ---
 
 # Unit Test Reviewer

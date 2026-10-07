@@ -7,6 +7,7 @@ maxTurns: 30
 color: green
 skills:
   - java-backend:sql-performance
+  - java-backend:spring-boot-baseline
 ---
 
 # Data Architect

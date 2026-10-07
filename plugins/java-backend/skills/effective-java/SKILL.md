@@ -176,25 +176,25 @@ public Order findOrder(OrderId id) {
 
 ## When to Apply
 
-- Java 程式碼涉及物件建立模式（factory, builder）
-- equals/hashCode、Optional、Stream API 使用審查
-- 例外處理或泛型設計討論
+- Java code that creates objects (static factories, builders)
+- Reviewing equals/hashCode, Optional, or Stream API usage
+- Exception handling or generics design discussions
 
 ## Gotchas
 
-<!-- 持續更新：遇到新的 Claude 常犯錯誤時加入 -->
+<!-- Keep adding mistakes Claude repeatedly makes. -->
 
-- **Record 不等於 Entity**：不要把 JPA `@Entity` 換成 record。Record 沒有無參數構造器 + 可變欄位，Hibernate proxy 無法運作
-- **Stream.toList() 回傳 unmodifiable 但非真正 immutable**：原始 stream source 被修改時，list 內容會跟著變。需要真正隔離請用 `List.copyOf()`
-- **Lombok @Builder 跳過 record compact constructor 驗證**：用 Lombok @Builder 搭配 record 時，要在自定義 `build()` 內做驗證，否則 compact constructor 的 validation 被繞過
-- **sealed interface + pattern matching switch 忘加 default 分支**：未來新增子類型時編譯失敗，這是刻意設計的安全網，不是 bug
-- **Collections.unmodifiableList() 包裝仍能被原始 list 修改**：`List.copyOf()` 才真正安全，unmodifiableList 只是視圖
+- **A record is not an entity**: don't turn a JPA `@Entity` into a record. Records are final and immutable with no no-arg constructor, so Hibernate cannot proxy or populate them. Use records for DTOs and query projections.
+- **`Stream.toList()` returns an unmodifiable list**: unlike the result of `collect(Collectors.toList())`, which callers often mutate, any mutator throws `UnsupportedOperationException`. It is a copy, so later changes to the source don't leak in, but the copy is shallow: the elements themselves can still change.
+- **Record validation can't be bypassed**: every record constructor must end up in the canonical one, so checks in a compact constructor also run for builders, including Lombok's `@Builder`.
+- **Don't add `default` to an exhaustive switch over a sealed type**: without it, adding a new permitted subtype breaks compilation at every switch that doesn't handle it. That is the intended safety net.
+- **`Collections.unmodifiableList()` is a view**: changes to the wrapped list still show through. Use `List.copyOf()` for a real snapshot.
 
 ---
 
 ## Additional Resources
 
-- **references/object-creation.md** — Items 1-9 完整程式碼範例。查看特定 creation pattern 時讀取
-- **references/classes-and-interfaces.md** — Items 15-25 封裝、繼承、介面設計細節
-- **references/lambdas-streams.md** — Stream API 完整範例與陷阱
-- **references/concurrency.md** — Thread safety patterns、Virtual Thread 用法
+- **references/object-creation.md**: full examples for object creation (items 1-9). Read when checking a specific creation pattern.
+- **references/classes-and-interfaces.md**: encapsulation, inheritance, and interface design (items 15-25)
+- **references/lambdas-streams.md**: Stream API examples and pitfalls
+- **references/concurrency.md**: thread-safety patterns and virtual threads

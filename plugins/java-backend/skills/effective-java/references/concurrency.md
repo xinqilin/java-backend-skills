@@ -177,6 +177,8 @@ scheduled.scheduleAtFixedRate(
 ExecutorService virtual = Executors.newVirtualThreadPerTaskExecutor();
 ```
 
+**Virtual threads and pinning**: on Java 21-23, a virtual thread that blocks inside `synchronized` pins its carrier thread, which is why older advice says to replace `synchronized` with `ReentrantLock`. Since Java 24 (JEP 491), virtual threads can block in `synchronized` without pinning; pinning remains only in narrow cases such as blocking during class loading or initialization, or in native code that calls back into Java. Check the Java release before recommending a lock rewrite. With Spring Boot, enable them with `spring.threads.virtual.enabled=true` (Boot 3.2+, Java 21+); the Spring Boot docs strongly recommend Java 24 or later.
+
 ### CompletableFuture for Async Operations
 
 ```java

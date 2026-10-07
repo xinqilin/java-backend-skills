@@ -132,13 +132,13 @@ src/main/java/com/example/order/
 
 ## Gotchas
 
-<!-- 持續更新：遇到新的 Claude 常犯錯誤時加入 -->
+<!-- Keep adding mistakes Claude repeatedly makes. -->
 
-- **不要把 Clean Architecture 套到極致**：Spring Boot 小專案用 3 層（Controller / Service / Repository）就夠，ports/adapters 是大型系統的工具
-- **@Entity 放 domain layer 是務實選擇**：嚴格派要求 JPA entity 在 infrastructure，但這需要額外 mapper。若專案規模小，允許 domain 依賴 JPA annotations 是合理的 trade-off
-- **Domain Event 不要用 Spring ApplicationEvent**：這讓 domain 依賴 Spring framework，違反 Dependency Rule
-- **UseCase 超過 3 個依賴就該審查 SRP**：依賴太多通常意味著 use case 做了太多事
-- **不要為每個 Entity 都建 Repository interface**：只有 Aggregate Root 需要 Repository，其他 Entity 透過 Aggregate Root 存取
+- **Don't take Clean Architecture to the extreme**: a small Spring Boot project is fine with three layers (controller / service / repository); ports and adapters are a tool for large systems.
+- **`@Entity` in the domain layer is a pragmatic choice**: the strict view puts JPA entities in infrastructure, which costs an extra mapping layer. For small projects, letting the domain depend on JPA annotations is a reasonable trade-off.
+- **Don't model domain events as Spring `ApplicationEvent`s**: it makes the domain depend on the Spring framework, against the dependency rule.
+- **A use case with more than three dependencies deserves an SRP review**: many dependencies usually mean it does too much.
+- **Don't create a repository for every entity**: only aggregate roots need one; reach other entities through their aggregate root.
 
 ## Additional Resources
 
