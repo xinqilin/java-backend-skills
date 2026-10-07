@@ -1,13 +1,11 @@
 ---
-name: mysql-optimization
-description: MySQL performance optimization guide for Spring Boot/JPA. Use when reviewing database code, discussing index design, query optimization, N+1 problems, JPA/Hibernate tuning, or analyzing EXPLAIN plans. Complements /optimize-query command.
+name: sql-performance
+description: MySQL and PostgreSQL query performance for Spring Boot apps (index design, execution plans, query patterns). Use when reviewing database access code, designing indexes, or reading EXPLAIN output.
 user-invocable: false
 allowed-tools: Read, Grep, Glob
 ---
 
 # MySQL Performance Optimization
-
-IMPORTANT: All output must be in Traditional Chinese.
 
 ## Index Design Principles
 

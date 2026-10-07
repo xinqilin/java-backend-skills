@@ -1,9 +1,10 @@
 ---
 name: optimize-query
-description: Use when analyzing slow queries, optimizing SQL/JPA performance, reviewing EXPLAIN plans, or troubleshooting database bottlenecks.
-argument-hint: [file-or-query]
+description: Analyze slow SQL or Spring Data JPA queries on MySQL or PostgreSQL using execution plans, indexes, and fetch strategy. Use when the user asks to optimize a query, read an EXPLAIN plan, or fix a database bottleneck.
+argument-hint: "[file-or-query]"
 allowed-tools: Read, Grep, Glob, Bash
 context: fork
+agent: java-backend:data-architect
 ---
 
 # Optimize Query
@@ -265,6 +266,8 @@ public class Order {
 
 ## Output Format
 
+Write the analysis in the user's language. Keep code, SQL, and identifiers as-is.
+
 For each optimization, provide:
 
 ### 1. Current State Assessment
@@ -394,10 +397,10 @@ After optimizing:
 
 ## When to Apply
 
-- 慢查詢分析或 EXPLAIN plan 審查
-- N+1 查詢問題排查
-- SQL/JPA 效能瓶頸排除
-- Index 設計或調整建議
+- Slow query analysis or EXPLAIN plan review
+- Investigating N+1 queries
+- SQL/JPA performance bottlenecks
+- Index design or tuning
 
 ## When NOT to Optimize
 
@@ -406,14 +409,12 @@ After optimizing:
 - Write-heavy workload where index overhead hurts more
 - Development/testing environment (optimize for production data)
 
-**IMPORTANT: All output must be in Traditional Chinese (繁體中文)**
-
 ## Gotchas
 
-<!-- 持續更新：遇到新的 Claude 常犯錯誤時加入 -->
+<!-- Keep adding mistakes Claude repeatedly makes. -->
 
-- **EXPLAIN 在空表或少量資料上結果不準確**：確保測試資料夠多（接近生產環境規模）才能得到有意義的 EXPLAIN 輸出
-- **加 index 前先確認 selectivity**：`SELECT COUNT(DISTINCT col) / COUNT(*) FROM table` — 低選擇性（如 status 只有 5 種值）的 index 效果很差
-- **MySQL query optimizer 可能忽略你的 index**：用 `FORCE INDEX` 前先理解為什麼 optimizer 沒選這個 index，強制使用反而可能更慢
-- **Spring Data JPA findAll() 無分頁保護**：資料量大時直接 OOM，查詢前確認是否需要 Pageable 或 limit
-- **JOIN FETCH + Pageable 組合有陷阱**：Hibernate 會先載入全表再記憶體分頁（HHH000104 警告），需改為子查詢分頁
+- **EXPLAIN on empty or tiny tables misleads**: plans depend on statistics; test with production-like data volume.
+- **Check selectivity before adding an index**: `SELECT COUNT(DISTINCT col) / COUNT(*) FROM t`; a low-cardinality column alone (such as a status with 5 values) rarely makes a useful index.
+- **The optimizer may skip your index for a reason**: understand why before forcing it with an index hint; forcing can be slower.
+- **Spring Data JPA `findAll()` has no size guard**: on large tables it can exhaust memory; use paging or limits.
+- **Collection fetch join + pagination**: Hibernate applies the limit in memory after loading every matching row; paginate IDs first, then fetch.

@@ -1,13 +1,11 @@
 ---
 name: effective-java
-description: Java best practices guide based on Effective Java. Use when reviewing Java code, discussing design patterns, object creation, equals/hashCode, Optional, Stream API, exception handling, or concurrency. Applies Joshua Bloch's principles.
+description: Java language best practices (object creation, equals/hashCode, generics, Optional, streams, exceptions, concurrency) in the spirit of Effective Java. Use when reviewing or writing core Java code.
 user-invocable: false
 allowed-tools: Read, Grep, Glob
 ---
 
 # Effective Java Best Practices
-
-IMPORTANT: All output must be in Traditional Chinese.
 
 ## Creating Objects
 

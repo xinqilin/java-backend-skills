@@ -1,0 +1,29 @@
+{
+  "name": "java-backend",
+  "displayName": "Java Backend — Spring Boot · JPA · MySQL/PostgreSQL",
+  "version": "2.0.0",
+  "description": "Deep Spring Boot + Spring Data JPA + MySQL/PostgreSQL expertise: transaction and isolation pitfalls, JPA/Hibernate performance, index design, code and PR review, and JUnit test review and generation.",
+  "author": {
+    "name": "Bill Lin",
+    "url": "https://github.com/xinqilin"
+  },
+  "homepage": "https://github.com/xinqilin/claude-dev-toolkit-marketplace",
+  "repository": "https://github.com/xinqilin/claude-dev-toolkit-marketplace",
+  "supportUrl": "https://github.com/xinqilin/claude-dev-toolkit-marketplace/issues",
+  "license": "Apache-2.0",
+  "keywords": [
+    "java",
+    "spring-boot",
+    "spring-data-jpa",
+    "hibernate",
+    "mysql",
+    "postgresql",
+    "transactions",
+    "isolation-levels",
+    "database-performance",
+    "indexing",
+    "code-review",
+    "junit",
+    "testing"
+  ]
+}

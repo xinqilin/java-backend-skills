@@ -1,28 +1,20 @@
 {
-  "name": "bill-lin-dev-toolkit",
+  "name": "xinqilin",
+  "description": "Claude Code plugins by Bill Lin, focused on depth for Java backend engineers.",
   "owner": {
     "name": "Bill Lin"
   },
   "plugins": [
     {
-      "name": "bill-billing-unit-test-reviewer",
-      "source": "./plugins/bill-billing-unit-test-reviewer",
-      "description": "Senior unit test reviewer specializing in Java/Spring Boot testing best practices"
-    },
-    {
-      "name": "bill-code-reviewer",
-      "source": "./plugins/bill-code-reviewer",
-      "description": "Expert code reviewer focusing on clean code, design patterns, and Java best practices"
-    },
-    {
-      "name": "bill-java-developer",
-      "source": "./plugins/bill-java-developer",
-      "description": "Senior Java/Spring Boot developer with expertise in JPA, database optimization, and enterprise architecture. Preloads effective-java, clean-architecture, mysql-optimization skills."
-    },
-    {
-      "name": "bill-java-skills",
-      "source": "./plugins/bill-java-skills",
-      "description": "Java best practices skills: Clean Architecture, Effective Java, MySQL optimization"
+      "name": "java-backend",
+      "source": "./plugins/java-backend",
+      "description": "Deep Spring Boot + Spring Data JPA + MySQL/PostgreSQL expertise: transactions, isolation, JPA/Hibernate performance, indexing, code and test review."
     }
-  ]
+  ],
+  "renames": {
+    "bill-billing-unit-test-reviewer": "java-backend",
+    "bill-code-reviewer": "java-backend",
+    "bill-java-developer": "java-backend",
+    "bill-java-skills": "java-backend"
+  }
 }

@@ -1,13 +1,11 @@
 ---
 name: clean-architecture
-description: Clean Architecture design guide for Spring Boot. Use when reviewing code architecture, designing solutions, discussing layer separation, dependency rules, or project structure. Applies Uncle Bob's Clean Architecture principles.
+description: Layering and dependency rules for Spring Boot projects in the spirit of Clean Architecture. Use when reviewing architecture, layer separation, or project structure.
 user-invocable: false
 allowed-tools: Read, Grep, Glob
 ---
 
 # Clean Architecture for Spring Boot
-
-IMPORTANT: All output must be in Traditional Chinese.
 
 ## Core Principle: The Dependency Rule
 
