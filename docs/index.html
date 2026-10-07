@@ -1,0 +1,99 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>java-backend Explained</title>
+<meta name="description" content="Picture explainers for the java-backend Claude Code plugin: transactions, JPA/Hibernate, and SQL performance for Spring Boot with MySQL and PostgreSQL.">
+<link rel="stylesheet" href="assets/eli5.css">
+<script src="assets/lang.js"></script>
+</head>
+<body>
+<header class="top">
+  <a class="home" href="index.html">java-backend</a>
+  <button class="lang-toggle" type="button">中文</button>
+</header>
+
+<main>
+  <p class="kicker"><span lang="en">Claude Code plugin · Spring Boot · JPA · MySQL / PostgreSQL</span><span lang="zh-Hant-TW">Claude Code plugin · Spring Boot · JPA · MySQL / PostgreSQL</span></p>
+  <h1><span lang="en">Deep, not broad.</span><span lang="zh-Hant-TW">做深，不做廣。</span></h1>
+  <p class="lead">
+    <span lang="en">The bugs that hurt Java backends hide where the code meets the database. These pages explain those ideas with pictures; the plugin teaches Claude the same ideas, checked against official docs.</span>
+    <span lang="zh-Hant-TW">Java 後端最痛的 bug，藏在程式碼和資料庫交會的地方。這些頁面用圖解釋這些觀念；plugin 則把同樣的觀念教給 Claude，內容都對照過官方文件。</span>
+  </p>
+
+  <section class="panel">
+    <figure>
+      <svg viewBox="0 0 800 220" role="img" aria-labelledby="hero-title">
+        <title id="hero-title">You ask Claude; the plugin adds database-aware knowledge; you get a review, a test, or a design</title>
+        <rect class="box" x="20" y="60" width="200" height="100" rx="16"/>
+        <text class="t" x="120" y="105" text-anchor="middle" lang="en">You ask</text>
+        <text class="t" x="120" y="105" text-anchor="middle" lang="zh-Hant-TW">你提問</text>
+        <text class="t-muted" x="120" y="132" text-anchor="middle">/java-backend:…</text>
+        <path class="line" d="M230 110 H290"/>
+        <polygon class="fmuted" points="290,103 304,110 290,117"/>
+        <rect class="box" x="310" y="40" width="200" height="140" rx="16"/>
+        <text class="t" x="410" y="90" text-anchor="middle">Claude</text>
+        <text class="t-sm" x="410" y="118" text-anchor="middle">+ java-backend</text>
+        <text class="t-muted" x="410" y="146" text-anchor="middle" lang="en">transactions · JPA · SQL</text>
+        <text class="t-muted" x="410" y="146" text-anchor="middle" lang="zh-Hant-TW">交易 · JPA · SQL</text>
+        <path class="line" d="M520 110 H580"/>
+        <polygon class="fmuted" points="580,103 594,110 580,117"/>
+        <rect class="box" x="600" y="20" width="180" height="50" rx="12"/>
+        <text class="t-sm" x="690" y="51" text-anchor="middle" lang="en">Review</text>
+        <text class="t-sm" x="690" y="51" text-anchor="middle" lang="zh-Hant-TW">程式碼審查</text>
+        <rect class="box" x="600" y="85" width="180" height="50" rx="12"/>
+        <text class="t-sm" x="690" y="116" text-anchor="middle" lang="en">Tests</text>
+        <text class="t-sm" x="690" y="116" text-anchor="middle" lang="zh-Hant-TW">測試</text>
+        <rect class="box" x="600" y="150" width="180" height="50" rx="12"/>
+        <text class="t-sm" x="690" y="181" text-anchor="middle" lang="en">Design</text>
+        <text class="t-sm" x="690" y="181" text-anchor="middle" lang="zh-Hant-TW">設計</text>
+      </svg>
+    </figure>
+    <p>
+      <span lang="en">Install in Claude Code:</span>
+      <span lang="zh-Hant-TW">在 Claude Code 裡安裝：</span>
+    </p>
+<pre><code>/plugin marketplace add xinqilin/claude-dev-toolkit-marketplace
+/plugin install java-backend@xinqilin</code></pre>
+  </section>
+
+  <h2 class="group-title"><span lang="en">Start here</span><span lang="zh-Hant-TW">從這裡開始</span></h2>
+  <ul class="cards">
+    <li><a href="how-it-works.html"><strong lang="en">How the plugin works</strong><strong lang="zh-Hant-TW">plugin 怎麼運作</strong><span class="desc" lang="en">Commands, helpers, and the knowledge they carry.</span><span class="desc" lang="zh-Hant-TW">指令、小幫手，以及它們帶著的知識。</span></a></li>
+  </ul>
+
+  <h2 class="group-title"><span lang="en">Transactions and consistency</span><span lang="zh-Hant-TW">交易與一致性</span></h2>
+  <ul class="cards">
+    <li><a href="acid-isolation.html"><strong lang="en">ACID and isolation</strong><strong lang="zh-Hant-TW">ACID 與隔離等級</strong><span class="desc" lang="en">What a transaction promises, and what it doesn't.</span><span class="desc" lang="zh-Hant-TW">交易保證了什麼，又沒保證什麼。</span></a></li>
+    <li><a href="lost-update-write-skew.html"><strong lang="en">Lost update and write skew</strong><strong lang="zh-Hant-TW">Lost update 與 write skew</strong><span class="desc" lang="en">Two requests, one row, one money bug.</span><span class="desc" lang="zh-Hant-TW">兩個請求、一筆資料、一個金額 bug。</span></a></li>
+    <li><a href="mvcc-mysql-vs-postgresql.html"><strong lang="en">MVCC: MySQL vs PostgreSQL</strong><strong lang="zh-Hant-TW">MVCC：MySQL 與 PostgreSQL</strong><span class="desc" lang="en">Same SQL, different guarantees.</span><span class="desc" lang="zh-Hant-TW">同樣的 SQL，不一樣的保證。</span></a></li>
+    <li><a href="outbox-idempotency.html"><strong lang="en">Outbox and idempotency</strong><strong lang="zh-Hant-TW">Outbox 與冪等性</strong><span class="desc" lang="en">Save and notify without losing or doubling anything.</span><span class="desc" lang="zh-Hant-TW">存檔和通知，不漏也不重複。</span></a></li>
+    <li><a href="replica-lag.html"><strong lang="en">Replica lag</strong><strong lang="zh-Hant-TW">Replica 延遲</strong><span class="desc" lang="en">Why your own write sometimes disappears.</span><span class="desc" lang="zh-Hant-TW">為什麼剛寫的資料有時看不到。</span></a></li>
+  </ul>
+
+  <h2 class="group-title"><span lang="en">JPA and Hibernate</span><span lang="zh-Hant-TW">JPA 與 Hibernate</span></h2>
+  <ul class="cards">
+    <li><a href="persistence-context.html"><strong lang="en">The persistence context</strong><strong lang="zh-Hant-TW">Persistence context</strong><span class="desc" lang="en">Why changing an object writes SQL.</span><span class="desc" lang="zh-Hant-TW">為什麼改了物件就會寫進資料庫。</span></a></li>
+    <li><a href="n-plus-one.html"><strong lang="en">N+1 queries</strong><strong lang="zh-Hant-TW">N+1 查詢</strong><span class="desc" lang="en">One page, a thousand queries.</span><span class="desc" lang="zh-Hant-TW">一個頁面，一千次查詢。</span></a></li>
+    <li><a href="transactional-proxy.html"><strong lang="en">@Transactional is a proxy</strong><strong lang="zh-Hant-TW">@Transactional 是一層 proxy</strong><span class="desc" lang="en">When the annotation silently does nothing.</span><span class="desc" lang="zh-Hant-TW">註解悄悄失效的時候。</span></a></li>
+  </ul>
+
+  <h2 class="group-title"><span lang="en">Indexes and performance</span><span lang="zh-Hant-TW">Index 與效能</span></h2>
+  <ul class="cards">
+    <li><a href="btree-composite-index.html"><strong lang="en">Composite indexes</strong><strong lang="zh-Hant-TW">複合 index</strong><span class="desc" lang="en">Equality first, range last.</span><span class="desc" lang="zh-Hant-TW">等值在前，範圍在後。</span></a></li>
+    <li><a href="reading-explain.html"><strong lang="en">Reading EXPLAIN</strong><strong lang="zh-Hant-TW">看懂 EXPLAIN</strong><span class="desc" lang="en">Estimated vs. actual, and what to look for.</span><span class="desc" lang="zh-Hant-TW">估計值和實際值，以及該看哪裡。</span></a></li>
+    <li><a href="connection-pool.html"><strong lang="en">Connection pool sizing</strong><strong lang="zh-Hant-TW">Connection pool 大小</strong><span class="desc" lang="en">Why a small pool is faster.</span><span class="desc" lang="zh-Hant-TW">為什麼小 pool 反而比較快。</span></a></li>
+  </ul>
+</main>
+
+<footer>
+  <p>
+    <span lang="en">Source, issues, and the plugin itself:</span>
+    <span lang="zh-Hant-TW">原始碼、issue 和 plugin 本體：</span>
+    <a href="https://github.com/xinqilin/claude-dev-toolkit-marketplace">github.com/xinqilin/claude-dev-toolkit-marketplace</a>
+  </p>
+  <p>Apache License 2.0</p>
+</footer>
+</body>
+</html>

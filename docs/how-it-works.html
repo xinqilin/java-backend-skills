@@ -1,0 +1,133 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>How java-backend Works</title>
+<meta name="description" content="How the java-backend Claude Code plugin routes commands to read-only helpers that carry database-aware knowledge.">
+<link rel="stylesheet" href="assets/eli5.css">
+<script src="assets/lang.js"></script>
+</head>
+<body>
+<header class="top">
+  <a class="home" href="index.html">java-backend</a>
+  <button class="lang-toggle" type="button">中文</button>
+</header>
+
+<main>
+  <p class="kicker"><span lang="en">Start here</span><span lang="zh-Hant-TW">從這裡開始</span></p>
+  <h1><span lang="en">How the plugin works</span><span lang="zh-Hant-TW">plugin 怎麼運作</span></h1>
+  <p class="lead">
+    <span lang="en">Commands you type, helpers that do the work, and knowledge cards the helpers read before they start.</span>
+    <span lang="zh-Hant-TW">你輸入的指令、實際做事的小幫手，以及小幫手開工前先讀的知識卡。</span>
+  </p>
+
+  <section class="panel">
+    <h2><span lang="en">1. A command calls a helper</span><span lang="zh-Hant-TW">1. 指令會叫一個小幫手</span></h2>
+    <figure>
+      <svg viewBox="0 0 800 260" role="img" aria-labelledby="f1">
+        <title id="f1">A command is handed to a read-only helper, which starts with knowledge cards already loaded</title>
+        <rect class="box" x="20" y="90" width="210" height="80" rx="14"/>
+        <text class="t-code" x="125" y="125" text-anchor="middle">/java-backend:</text>
+        <text class="t-code" x="125" y="148" text-anchor="middle">code-review</text>
+        <path class="line" d="M240 130 H300"/>
+        <polygon class="fmuted" points="300,123 314,130 300,137"/>
+        <rect class="box" x="320" y="60" width="200" height="140" rx="16"/>
+        <text class="t" x="420" y="105" text-anchor="middle" lang="en">Helper</text>
+        <text class="t" x="420" y="105" text-anchor="middle" lang="zh-Hant-TW">小幫手</text>
+        <text class="t-sm" x="420" y="135" text-anchor="middle">code-reviewer</text>
+        <text class="t-muted" x="420" y="165" text-anchor="middle" lang="en">read-only</text>
+        <text class="t-muted" x="420" y="165" text-anchor="middle" lang="zh-Hant-TW">只讀，不改檔</text>
+        <rect class="row" x="580" y="30" width="200" height="44" rx="10"/>
+        <text class="t-sm" x="680" y="58" text-anchor="middle">jpa-hibernate</text>
+        <rect class="row" x="580" y="84" width="200" height="44" rx="10"/>
+        <text class="t-sm" x="680" y="112" text-anchor="middle">transactions</text>
+        <rect class="row" x="580" y="138" width="200" height="44" rx="10"/>
+        <text class="t-sm" x="680" y="166" text-anchor="middle">spring-boot-baseline</text>
+        <rect class="row" x="580" y="192" width="200" height="44" rx="10"/>
+        <text class="t-sm" x="680" y="220" text-anchor="middle">effective-java</text>
+        <path class="dash" d="M575 130 H530"/>
+        <polygon class="fmuted" points="530,123 516,130 530,137"/>
+      </svg>
+      <figcaption>
+        <span lang="en">The cards on the right are loaded into the helper before it reads your code.</span>
+        <span lang="zh-Hant-TW">右邊的知識卡，會在小幫手讀你的程式碼之前先載入。</span>
+      </figcaption>
+    </figure>
+  </section>
+
+  <section class="panel">
+    <h2><span lang="en">2. First, it reads your project</span><span lang="zh-Hant-TW">2. 先讀你的專案設定</span></h2>
+    <figure>
+      <svg viewBox="0 0 800 200" role="img" aria-labelledby="f2">
+        <title id="f2">The helper reads pom.xml or build.gradle and application.yml to learn the Spring Boot version and database</title>
+        <rect class="box" x="20" y="30" width="220" height="60" rx="12"/>
+        <text class="t-code" x="130" y="66" text-anchor="middle">pom.xml</text>
+        <rect class="box" x="20" y="110" width="220" height="60" rx="12"/>
+        <text class="t-code" x="130" y="146" text-anchor="middle">application.yml</text>
+        <path class="line" d="M250 100 H330"/>
+        <polygon class="fmuted" points="330,93 344,100 330,107"/>
+        <rect class="row" x="360" y="60" width="420" height="80" rx="40"/>
+        <text class="t" x="570" y="96" text-anchor="middle">Spring Boot 4.1 · Hibernate 7.4</text>
+        <text class="t-sm" x="570" y="122" text-anchor="middle">MySQL 8.4</text>
+      </svg>
+      <figcaption>
+        <span lang="en">Advice must compile on your version. Spring Boot 3 and 4 differ in test annotations, JSON, and starters.</span>
+        <span lang="zh-Hant-TW">建議必須能在你的版本上編譯。Spring Boot 3 和 4 在測試註解、JSON、starter 上都不一樣。</span>
+      </figcaption>
+    </figure>
+  </section>
+
+  <section class="panel">
+    <h2><span lang="en">3. Which command goes where</span><span lang="zh-Hant-TW">3. 哪個指令交給誰</span></h2>
+    <figure>
+      <svg viewBox="0 0 800 330" role="img" aria-labelledby="f3">
+        <title id="f3">code-review and review-pr go to code-reviewer; review-test to test-reviewer; optimize-query to data-architect; write-test and design-solution stay in your conversation</title>
+        <g>
+          <rect class="box" x="20" y="20" width="300" height="50" rx="12"/><text class="t-code" x="170" y="51" text-anchor="middle">code-review · review-pr</text>
+          <path class="line" d="M330 45 H420"/><polygon class="fmuted" points="420,38 434,45 420,52"/>
+          <rect class="row" x="450" y="20" width="330" height="50" rx="12"/><text class="t-sm" x="615" y="51" text-anchor="middle">code-reviewer</text>
+        </g>
+        <g>
+          <rect class="box" x="20" y="90" width="300" height="50" rx="12"/><text class="t-code" x="170" y="121" text-anchor="middle">review-test</text>
+          <path class="line" d="M330 115 H420"/><polygon class="fmuted" points="420,108 434,115 420,122"/>
+          <rect class="row" x="450" y="90" width="330" height="50" rx="12"/><text class="t-sm" x="615" y="121" text-anchor="middle">test-reviewer</text>
+        </g>
+        <g>
+          <rect class="box" x="20" y="160" width="300" height="50" rx="12"/><text class="t-code" x="170" y="191" text-anchor="middle">optimize-query</text>
+          <path class="line" d="M330 185 H420"/><polygon class="fmuted" points="420,178 434,185 420,192"/>
+          <rect class="row" x="450" y="160" width="330" height="50" rx="12"/><text class="t-sm" x="615" y="191" text-anchor="middle">data-architect</text>
+        </g>
+        <g>
+          <rect class="box" x="20" y="250" width="300" height="60" rx="12"/><text class="t-code" x="170" y="285" text-anchor="middle">write-test · design-solution</text>
+          <path class="line" d="M330 280 H420"/><polygon class="fmuted" points="420,273 434,280 420,287"/>
+          <rect class="row" x="450" y="250" width="330" height="60" rx="12"/>
+          <text class="t-sm" x="615" y="285" text-anchor="middle" lang="en">your conversation (can edit, can ask you)</text>
+          <text class="t-sm" x="615" y="285" text-anchor="middle" lang="zh-Hant-TW">你的對話（能改檔、能問你）</text>
+        </g>
+      </svg>
+    </figure>
+    <p>
+      <span lang="en">Reviewers never change your files. Writing tests and designing happen in your own conversation, so you see every edit and can answer questions.</span>
+      <span lang="zh-Hant-TW">審查類的小幫手不會改你的檔案。寫測試和做設計在你自己的對話裡進行，每次修改你都看得到，也能回答它的問題。</span>
+    </p>
+  </section>
+
+  <section class="panel fix">
+    <h2><span lang="en">4. Every fact has a source</span><span lang="zh-Hant-TW">4. 每個說法都有出處</span></h2>
+    <p>
+      <span lang="en">Each knowledge card ends with links to the MySQL, PostgreSQL, Hibernate, or Spring documentation it was checked against.</span>
+      <span lang="zh-Hant-TW">每張知識卡的最後，都附上查證時用的 MySQL、PostgreSQL、Hibernate 或 Spring 官方文件連結。</span>
+    </p>
+  </section>
+</main>
+
+<footer>
+  <ul>
+    <li><span lang="en">Plugin layout:</span><span lang="zh-Hant-TW">plugin 結構：</span> <a href="https://github.com/xinqilin/claude-dev-toolkit-marketplace/tree/master/plugins/java-backend">plugins/java-backend</a></li>
+    <li><span lang="en">Claude Code docs on plugins:</span><span lang="zh-Hant-TW">Claude Code plugin 文件：</span> <a href="https://code.claude.com/docs/en/plugins/components">code.claude.com/docs/en/plugins/components</a></li>
+  </ul>
+  <p><a href="index.html"><span lang="en">All topics</span><span lang="zh-Hant-TW">所有主題</span></a></p>
+</footer>
+</body>
+</html>

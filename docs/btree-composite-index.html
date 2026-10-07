@@ -1,0 +1,102 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Composite Indexes</title>
+<meta name="description" content="How a B-tree composite index is ordered, why equality columns go first and the range column last, and how covering differs between MySQL and PostgreSQL.">
+<link rel="stylesheet" href="assets/eli5.css">
+<script src="assets/lang.js"></script>
+</head>
+<body>
+<header class="top">
+  <a class="home" href="index.html">java-backend</a>
+  <button class="lang-toggle" type="button">中文</button>
+</header>
+
+<main>
+  <p class="kicker"><span lang="en">Indexes and performance</span><span lang="zh-Hant-TW">Index 與效能</span></p>
+  <h1><span lang="en">Composite indexes: equality first, range last</span><span lang="zh-Hant-TW">複合 index：等值在前，範圍在後</span></h1>
+  <p class="lead">
+    <span lang="en">An index is a sorted phone book. A two-column index sorts by the first column, then by the second within each first-column value.</span>
+    <span lang="zh-Hant-TW">Index 就像一本排好序的電話簿。兩個欄位的 index，先依第一欄排序，第一欄相同的，再依第二欄排序。</span>
+  </p>
+
+  <section class="panel">
+    <h2><span lang="en">The query</span><span lang="zh-Hant-TW">要加速的查詢</span></h2>
+<pre><code>WHERE customer_id = ? AND status = ? AND created_at &gt;= ?
+ORDER BY created_at
+LIMIT 50</code></pre>
+  </section>
+
+  <section class="panel fix">
+    <h2><span lang="en">Right order: (customer_id, status, created_at)</span><span lang="zh-Hant-TW">正確順序：(customer_id, status, created_at)</span></h2>
+    <figure>
+      <svg viewBox="0 0 800 260" role="img" aria-labelledby="good">
+        <title id="good">With equality columns first, all matching entries sit together and are already sorted by created_at, so the database reads one short slice</title>
+        <text class="t-muted" x="20" y="30" lang="en">index entries, in order</text><text class="t-muted" x="20" y="30" lang="zh-Hant-TW">index 裡的資料（已排序）</text>
+        <g>
+          <rect class="row" x="20" y="45" width="760" height="30" rx="6"/><text class="t-code" x="36" y="66">41 · PAID    · 2026-01-03</text>
+          <rect class="row" x="20" y="79" width="760" height="30" rx="6"/><text class="t-code" x="36" y="100">42 · PAID    · 2026-02-11</text>
+          <rect class="box sok" x="20" y="113" width="760" height="30" rx="6"/><text class="t-code" x="36" y="134">42 · PENDING · 2026-09-01</text>
+          <rect class="box sok" x="20" y="147" width="760" height="30" rx="6"/><text class="t-code" x="36" y="168">42 · PENDING · 2026-09-14</text>
+          <rect class="box sok" x="20" y="181" width="760" height="30" rx="6"/><text class="t-code" x="36" y="202">42 · PENDING · 2026-10-02</text>
+          <rect class="row" x="20" y="215" width="760" height="30" rx="6"/><text class="t-code" x="36" y="236">43 · PAID    · 2026-03-20</text>
+        </g>
+        <text class="t-sm fok" x="560" y="168" lang="en">one slice, already sorted</text><text class="t-sm fok" x="560" y="168" lang="zh-Hant-TW">一小段，而且已排好序</text>
+      </svg>
+    </figure>
+    <p>
+      <span lang="en">The two equality columns narrow it to one slice, and that slice is already ordered by <code>created_at</code>. The database reads 50 entries and stops, with no sorting. <code>(status, customer_id, created_at)</code> works just as well.</span>
+      <span lang="zh-Hant-TW">兩個等值欄位把範圍縮到一小段，而那一段本來就依 <code>created_at</code> 排好了。資料庫讀 50 筆就停，不用排序。<code>(status, customer_id, created_at)</code> 也一樣好。</span>
+    </p>
+  </section>
+
+  <section class="panel trap">
+    <h2><span lang="en">Wrong order: range first</span><span lang="zh-Hant-TW">錯誤順序：範圍放前面</span></h2>
+    <figure>
+      <svg viewBox="0 0 800 200" role="img" aria-labelledby="bad">
+        <title id="bad">With created_at first, matching customers are scattered through a huge date range that must be scanned</title>
+        <rect class="row" x="20" y="20" width="760" height="120" rx="10"/>
+        <text class="t-code" x="40" y="50">(created_at, customer_id)</text>
+        <g>
+          <rect class="fbad" x="60" y="80" width="8" height="40"/><rect class="fbad" x="190" y="80" width="8" height="40"/><rect class="fbad" x="330" y="80" width="8" height="40"/>
+          <rect class="fbad" x="470" y="80" width="8" height="40"/><rect class="fbad" x="600" y="80" width="8" height="40"/><rect class="fbad" x="720" y="80" width="8" height="40"/>
+        </g>
+        <path class="line" d="M40 160 H760"/><polygon class="fmuted" points="760,153 774,160 760,167"/>
+        <text class="t-sm fbad" x="400" y="190" text-anchor="middle" lang="en">scan every date after the cutoff, filter as you go</text><text class="t-sm fbad" x="400" y="190" text-anchor="middle" lang="zh-Hant-TW">得掃過截止日之後的每一天，邊掃邊過濾</text>
+      </svg>
+    </figure>
+    <p>
+      <span lang="en">After a range column, the columns to its right can't narrow the scan anymore. "Put the most selective column first" is a myth: order columns by how the query uses them.</span>
+      <span lang="zh-Hant-TW">一旦遇到範圍欄位，它右邊的欄位就無法再縮小掃描範圍。「選擇性最高的欄位放最前面」是迷思：欄位順序要看查詢怎麼使用它們。</span>
+    </p>
+  </section>
+
+  <section class="panel">
+    <h2><span lang="en">Covering: skip the table</span><span lang="zh-Hant-TW">Covering：不用回表</span></h2>
+    <figure>
+      <svg viewBox="0 0 800 170" role="img" aria-labelledby="cover">
+        <title id="cover">In MySQL every secondary index already contains the primary key; in PostgreSQL extra columns are added with INCLUDE</title>
+        <rect class="box" x="20" y="20" width="370" height="130" rx="14"/>
+        <text class="t" x="205" y="56" text-anchor="middle">MySQL InnoDB</text>
+        <text class="t-sm" x="205" y="92" text-anchor="middle" lang="en">every index already holds the PK</text><text class="t-sm" x="205" y="92" text-anchor="middle" lang="zh-Hant-TW">每個 index 本來就帶著 PK</text>
+        <text class="t-muted" x="205" y="122" text-anchor="middle">EXPLAIN → Using index</text>
+        <rect class="box" x="410" y="20" width="370" height="130" rx="14"/>
+        <text class="t" x="595" y="56" text-anchor="middle">PostgreSQL</text>
+        <text class="t-code" x="595" y="92" text-anchor="middle">… INCLUDE (total)</text>
+        <text class="t-muted" x="595" y="122" text-anchor="middle" lang="en">Index Only Scan (needs VACUUM)</text><text class="t-muted" x="595" y="122" text-anchor="middle" lang="zh-Hant-TW">Index Only Scan（需要 VACUUM）</text>
+      </svg>
+    </figure>
+  </section>
+</main>
+
+<footer>
+  <ul>
+    <li><span lang="en">Go deeper:</span><span lang="zh-Hant-TW">深入閱讀：</span> <a href="https://github.com/xinqilin/claude-dev-toolkit-marketplace/blob/master/plugins/java-backend/skills/sql-performance/references/index-design.md">index-design.md</a></li>
+    <li><span lang="en">Official docs:</span><span lang="zh-Hant-TW">官方文件：</span> <a href="https://www.postgresql.org/docs/current/indexes-multicolumn.html">PostgreSQL multicolumn indexes</a> · <a href="https://dev.mysql.com/doc/refman/8.4/en/multiple-column-indexes.html">MySQL multiple-column indexes</a></li>
+  </ul>
+  <p><a href="index.html"><span lang="en">All topics</span><span lang="zh-Hant-TW">所有主題</span></a></p>
+</footer>
+</body>
+</html>

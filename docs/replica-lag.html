@@ -1,0 +1,86 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Replica Lag</title>
+<meta name="description" content="Why reads from an asynchronous replica can miss your own write, and how to route reads safely in Spring.">
+<link rel="stylesheet" href="assets/eli5.css">
+<script src="assets/lang.js"></script>
+</head>
+<body>
+<header class="top">
+  <a class="home" href="index.html">java-backend</a>
+  <button class="lang-toggle" type="button">中文</button>
+</header>
+
+<main>
+  <p class="kicker"><span lang="en">Transactions and consistency · DDIA</span><span lang="zh-Hant-TW">交易與一致性 · DDIA</span></p>
+  <h1><span lang="en">Replica lag</span><span lang="zh-Hant-TW">Replica 延遲</span></h1>
+  <p class="lead">
+    <span lang="en">Read replicas copy the primary a little later. "A little" is usually milliseconds, and sometimes much more.</span>
+    <span lang="zh-Hant-TW">Read replica 會晚一點才複製到主資料庫的內容。「晚一點」通常是幾毫秒，有時候會久得多。</span>
+  </p>
+
+  <section class="panel trap">
+    <h2><span lang="en">Where did my change go?</span><span lang="zh-Hant-TW">我剛改的資料呢？</span></h2>
+    <figure>
+      <svg viewBox="0 0 800 240" role="img" aria-labelledby="lag">
+        <title id="lag">The user saves a new name to the primary, then reads from a replica that hasn't received it yet and sees the old name</title>
+        <rect class="box" x="20" y="90" width="140" height="70" rx="14"/>
+        <text class="t" x="90" y="132" text-anchor="middle" lang="en">User</text><text class="t" x="90" y="132" text-anchor="middle" lang="zh-Hant-TW">使用者</text>
+        <path class="line sa" d="M170 105 L330 60"/><polygon class="fa" points="326,52 342,56 331,67"/>
+        <text class="t-sm fa" x="230" y="64" lang="en">1. save "Amy"</text><text class="t-sm fa" x="230" y="64" lang="zh-Hant-TW">1. 存成 "Amy"</text>
+        <rect class="box" x="350" y="25" width="190" height="70" rx="14"/>
+        <text class="t-sm" x="445" y="56" text-anchor="middle" lang="en">primary</text><text class="t-sm" x="445" y="56" text-anchor="middle" lang="zh-Hant-TW">主資料庫</text>
+        <text class="t-code" x="445" y="80" text-anchor="middle">"Amy"</text>
+        <path class="dash" d="M445 105 V145"/>
+        <text class="t-muted" x="458" y="132" lang="en">copying…</text><text class="t-muted" x="458" y="132" lang="zh-Hant-TW">複製中…</text>
+        <rect class="box" x="350" y="150" width="190" height="70" rx="14"/>
+        <text class="t-sm" x="445" y="181" text-anchor="middle" lang="en">replica</text><text class="t-sm" x="445" y="181" text-anchor="middle" lang="zh-Hant-TW">replica</text>
+        <text class="t-code fbad" x="445" y="205" text-anchor="middle">"Ann"</text>
+        <path class="line sb" d="M170 145 L330 185"/><polygon class="fb" points="327,193 342,189 331,178"/>
+        <text class="t-sm fb" x="200" y="205" lang="en">2. read → "Ann"</text><text class="t-sm fb" x="200" y="205" lang="zh-Hant-TW">2. 讀到 "Ann"</text>
+        <text class="t-sm fbad" x="580" y="125" lang="en">old name!</text><text class="t-sm fbad" x="580" y="125" lang="zh-Hant-TW">還是舊名字！</text>
+      </svg>
+    </figure>
+  </section>
+
+  <section class="panel fix">
+    <h2><span lang="en">Three rules</span><span lang="zh-Hant-TW">三條規則</span></h2>
+    <figure>
+      <svg viewBox="0 0 800 200" role="img" aria-labelledby="rules">
+        <title id="rules">Read your own writes from the primary; keep a user on one replica; never use a replica for reads that decide a write</title>
+        <rect class="box" x="10" y="20" width="250" height="160" rx="14"/>
+        <text class="t" x="135" y="62" text-anchor="middle">1</text>
+        <text class="t-sm" x="135" y="100" text-anchor="middle" lang="en">After a write, read</text><text class="t-sm" x="135" y="100" text-anchor="middle" lang="zh-Hant-TW">剛寫完的人</text>
+        <text class="t-sm" x="135" y="124" text-anchor="middle" lang="en">your own data</text><text class="t-sm" x="135" y="124" text-anchor="middle" lang="zh-Hant-TW">讀自己的資料</text>
+        <text class="t-sm" x="135" y="148" text-anchor="middle" lang="en">from the primary</text><text class="t-sm" x="135" y="148" text-anchor="middle" lang="zh-Hant-TW">要讀主資料庫</text>
+        <rect class="box" x="275" y="20" width="250" height="160" rx="14"/>
+        <text class="t" x="400" y="62" text-anchor="middle">2</text>
+        <text class="t-sm" x="400" y="100" text-anchor="middle" lang="en">Keep a user on</text><text class="t-sm" x="400" y="100" text-anchor="middle" lang="zh-Hant-TW">讓同一個使用者</text>
+        <text class="t-sm" x="400" y="124" text-anchor="middle" lang="en">one replica, so time</text><text class="t-sm" x="400" y="124" text-anchor="middle" lang="zh-Hant-TW">固定讀同一台，</text>
+        <text class="t-sm" x="400" y="148" text-anchor="middle" lang="en">never goes backwards</text><text class="t-sm" x="400" y="148" text-anchor="middle" lang="zh-Hant-TW">資料才不會倒退</text>
+        <rect class="box" x="540" y="20" width="250" height="160" rx="14"/>
+        <text class="t" x="665" y="62" text-anchor="middle">3</text>
+        <text class="t-sm" x="665" y="100" text-anchor="middle" lang="en">Stock or balance</text><text class="t-sm" x="665" y="100" text-anchor="middle" lang="zh-Hant-TW">會影響寫入決定的</text>
+        <text class="t-sm" x="665" y="124" text-anchor="middle" lang="en">checks that decide</text><text class="t-sm" x="665" y="124" text-anchor="middle" lang="zh-Hant-TW">庫存或餘額檢查，</text>
+        <text class="t-sm" x="665" y="148" text-anchor="middle" lang="en">a write: primary only</text><text class="t-sm" x="665" y="148" text-anchor="middle" lang="zh-Hant-TW">只能讀主資料庫</text>
+      </svg>
+    </figure>
+    <p>
+      <span lang="en">In Spring, <code>LazyConnectionDataSourceProxy</code> can send read-only transactions to a separate replica <code>DataSource</code> (Spring Framework 6.1.2+). Mark only the reads that can tolerate lag as <code>@Transactional(readOnly = true)</code>.</span>
+      <span lang="zh-Hant-TW">在 Spring 裡，<code>LazyConnectionDataSourceProxy</code> 可以把唯讀交易導到另一個 replica <code>DataSource</code>（Spring Framework 6.1.2 以上）。只有能容忍延遲的讀取，才標成 <code>@Transactional(readOnly = true)</code>。</span>
+    </p>
+  </section>
+</main>
+
+<footer>
+  <ul>
+    <li><span lang="en">Go deeper:</span><span lang="zh-Hant-TW">深入閱讀：</span> <a href="https://github.com/xinqilin/claude-dev-toolkit-marketplace/blob/master/plugins/java-backend/skills/transactions-consistency/references/distributed-data.md">distributed-data.md</a></li>
+    <li><span lang="en">Official docs:</span><span lang="zh-Hant-TW">官方文件：</span> <a href="https://docs.spring.io/spring-framework/docs/current/javadoc-api/org/springframework/jdbc/datasource/LazyConnectionDataSourceProxy.html">LazyConnectionDataSourceProxy</a> · Kleppmann, <cite>Designing Data-Intensive Applications</cite>, ch. 5 "Replication"</li>
+  </ul>
+  <p><a href="index.html"><span lang="en">All topics</span><span lang="zh-Hant-TW">所有主題</span></a></p>
+</footer>
+</body>
+</html>

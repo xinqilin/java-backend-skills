@@ -1,0 +1,90 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Connection Pool Sizing</title>
+<meta name="description" content="Why a small HikariCP pool is faster, what really exhausts it, and how virtual threads change the picture.">
+<link rel="stylesheet" href="assets/eli5.css">
+<script src="assets/lang.js"></script>
+</head>
+<body>
+<header class="top">
+  <a class="home" href="index.html">java-backend</a>
+  <button class="lang-toggle" type="button">中文</button>
+</header>
+
+<main>
+  <p class="kicker"><span lang="en">Indexes and performance</span><span lang="zh-Hant-TW">Index 與效能</span></p>
+  <h1><span lang="en">Connection pool sizing</span><span lang="zh-Hant-TW">Connection pool 大小</span></h1>
+  <p class="lead">
+    <span lang="en">A database can only work on a few things at once. More connections don't add workers; they add a queue inside the database.</span>
+    <span lang="zh-Hant-TW">資料庫一次只能專心處理少數幾件事。增加連線不會多出工人，只會在資料庫裡面多出一條排隊的隊伍。</span>
+  </p>
+
+  <section class="panel">
+    <h2><span lang="en">Small pool, short line at the door</span><span lang="zh-Hant-TW">小 pool，門口排短隊</span></h2>
+    <figure>
+      <svg viewBox="0 0 800 230" role="img" aria-labelledby="pool">
+        <title id="pool">Many requests wait briefly for a small pool of connections, and the database works on each one without thrashing</title>
+        <g>
+          <circle class="fmuted" cx="40" cy="70" r="10"/><circle class="fmuted" cx="70" cy="70" r="10"/><circle class="fmuted" cx="100" cy="70" r="10"/><circle class="fmuted" cx="130" cy="70" r="10"/>
+          <circle class="fmuted" cx="40" cy="110" r="10"/><circle class="fmuted" cx="70" cy="110" r="10"/><circle class="fmuted" cx="100" cy="110" r="10"/><circle class="fmuted" cx="130" cy="110" r="10"/>
+          <circle class="fmuted" cx="40" cy="150" r="10"/><circle class="fmuted" cx="70" cy="150" r="10"/><circle class="fmuted" cx="100" cy="150" r="10"/><circle class="fmuted" cx="130" cy="150" r="10"/>
+        </g>
+        <text class="t-muted" x="85" y="200" text-anchor="middle" lang="en">requests</text><text class="t-muted" x="85" y="200" text-anchor="middle" lang="zh-Hant-TW">請求</text>
+        <path class="line" d="M160 110 H230"/><polygon class="fmuted" points="230,103 244,110 230,117"/>
+        <rect class="box sa" x="250" y="50" width="200" height="120" rx="14"/>
+        <text class="t-sm fa" x="350" y="82" text-anchor="middle">HikariCP</text>
+        <g><rect class="fa" x="280" y="100" width="22" height="40" rx="4"/><rect class="fa" x="312" y="100" width="22" height="40" rx="4"/><rect class="fa" x="344" y="100" width="22" height="40" rx="4"/><rect class="fa" x="376" y="100" width="22" height="40" rx="4"/><rect class="fa" x="408" y="100" width="22" height="40" rx="4"/></g>
+        <path class="line" d="M460 110 H530"/><polygon class="fmuted" points="530,103 544,110 530,117"/>
+        <rect class="box" x="550" y="50" width="230" height="120" rx="14"/>
+        <text class="t" x="665" y="100" text-anchor="middle" lang="en">database</text><text class="t" x="665" y="100" text-anchor="middle" lang="zh-Hant-TW">資料庫</text>
+        <text class="t-muted" x="665" y="130" text-anchor="middle" lang="en">CPU · disk</text><text class="t-muted" x="665" y="130" text-anchor="middle" lang="zh-Hant-TW">CPU · 磁碟</text>
+      </svg>
+    </figure>
+    <p>
+      <span lang="en">Starting point from HikariCP's guide: <code>(core_count × 2) + effective_spindle_count</code>, using the database server's cores. Then load-test around it. HikariCP's default is 10, and it recommends a fixed-size pool (leave <code>minimum-idle</code> unset).</span>
+      <span lang="zh-Hant-TW">HikariCP 建議的起點：<code>(core_count × 2) + effective_spindle_count</code>，core 數用的是資料庫主機的。之後再壓測微調。HikariCP 預設是 10，並建議固定大小（不要設定 <code>minimum-idle</code>）。</span>
+    </p>
+  </section>
+
+  <section class="panel trap">
+    <h2><span lang="en">"Connection not available" is usually not a size problem</span><span lang="zh-Hant-TW">「拿不到連線」通常不是 pool 太小</span></h2>
+    <figure>
+      <svg viewBox="0 0 800 190" role="img" aria-labelledby="hog">
+        <title id="hog">Connections are held by long transactions with HTTP calls inside, by Open Session in View, by REQUIRES_NEW, or by leaks</title>
+        <rect class="box" x="10" y="20" width="185" height="150" rx="14"/>
+        <text class="t-sm" x="102" y="80" text-anchor="middle" lang="en">HTTP call</text><text class="t-sm" x="102" y="80" text-anchor="middle" lang="zh-Hant-TW">交易裡</text>
+        <text class="t-sm" x="102" y="104" text-anchor="middle" lang="en">inside a tx</text><text class="t-sm" x="102" y="104" text-anchor="middle" lang="zh-Hant-TW">呼叫 HTTP</text>
+        <rect class="box" x="208" y="20" width="185" height="150" rx="14"/>
+        <text class="t-sm" x="300" y="80" text-anchor="middle">open-in-view</text>
+        <text class="t-muted" x="300" y="104" text-anchor="middle" lang="en">(on by default)</text><text class="t-muted" x="300" y="104" text-anchor="middle" lang="zh-Hant-TW">（預設開啟）</text>
+        <rect class="box" x="406" y="20" width="185" height="150" rx="14"/>
+        <text class="t-sm" x="498" y="80" text-anchor="middle">REQUIRES_NEW</text>
+        <text class="t-muted" x="498" y="104" text-anchor="middle" lang="en">2 per request</text><text class="t-muted" x="498" y="104" text-anchor="middle" lang="zh-Hant-TW">每個請求拿 2 條</text>
+        <rect class="box" x="604" y="20" width="185" height="150" rx="14"/>
+        <text class="t-sm" x="696" y="80" text-anchor="middle" lang="en">leak</text><text class="t-sm" x="696" y="80" text-anchor="middle" lang="zh-Hant-TW">連線外洩</text>
+        <text class="t-muted" x="696" y="104" text-anchor="middle">leak-detection</text>
+      </svg>
+    </figure>
+  </section>
+
+  <section class="panel">
+    <h2><span lang="en">Virtual threads: the pool becomes the gate</span><span lang="zh-Hant-TW">Virtual thread：pool 變成唯一的閘門</span></h2>
+    <p>
+      <span lang="en">With <code>spring.threads.virtual.enabled=true</code>, threads are cheap but connections are not. Thousands of virtual threads can wait for 10 connections, and <code>connection-timeout</code> (30 s by default) decides who fails. Size the pool for the database, not for the number of threads.</span>
+      <span lang="zh-Hant-TW">開啟 <code>spring.threads.virtual.enabled=true</code> 之後，thread 很便宜，連線卻沒有。上千個 virtual thread 可能在等 10 條連線，由 <code>connection-timeout</code>（預設 30 秒）決定誰失敗。pool 的大小要依資料庫來訂，而不是依 thread 數量。</span>
+    </p>
+  </section>
+</main>
+
+<footer>
+  <ul>
+    <li><span lang="en">Go deeper:</span><span lang="zh-Hant-TW">深入閱讀：</span> <a href="https://github.com/xinqilin/claude-dev-toolkit-marketplace/blob/master/plugins/java-backend/skills/sql-performance/references/connection-pool.md">connection-pool.md</a></li>
+    <li><span lang="en">Official docs:</span><span lang="zh-Hant-TW">官方文件：</span> <a href="https://github.com/brettwooldridge/HikariCP/wiki/About-Pool-Sizing">HikariCP: About Pool Sizing</a> · <a href="https://github.com/brettwooldridge/HikariCP#gear-configuration-knobs-baby">HikariCP configuration</a></li>
+  </ul>
+  <p><a href="index.html"><span lang="en">All topics</span><span lang="zh-Hant-TW">所有主題</span></a></p>
+</footer>
+</body>
+</html>

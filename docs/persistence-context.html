@@ -1,0 +1,97 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>The Persistence Context</title>
+<meta name="description" content="How Hibernate's persistence context turns object changes into SQL, what flush means, and what readOnly really does.">
+<link rel="stylesheet" href="assets/eli5.css">
+<script src="assets/lang.js"></script>
+</head>
+<body>
+<header class="top">
+  <a class="home" href="index.html">java-backend</a>
+  <button class="lang-toggle" type="button">中文</button>
+</header>
+
+<main>
+  <p class="kicker"><span lang="en">JPA and Hibernate</span><span lang="zh-Hant-TW">JPA 與 Hibernate</span></p>
+  <h1><span lang="en">The persistence context</span><span lang="zh-Hant-TW">Persistence context</span></h1>
+  <p class="lead">
+    <span lang="en">Inside a transaction, Hibernate keeps a notebook of every entity it loaded. Change an object, and the notebook writes the SQL for you.</span>
+    <span lang="zh-Hant-TW">在交易裡，Hibernate 會把它載入的每個 entity 記在一本筆記本裡。你一改物件，筆記本就幫你寫好 SQL。</span>
+  </p>
+
+  <section class="panel">
+    <h2><span lang="en">Load, change, flush</span><span lang="zh-Hant-TW">載入、修改、flush</span></h2>
+    <figure>
+      <svg viewBox="0 0 800 250" role="img" aria-labelledby="pc">
+        <title id="pc">Hibernate loads a customer and keeps a snapshot; the code changes the name; at flush Hibernate compares and issues an UPDATE</title>
+        <rect class="box" x="20" y="30" width="480" height="190" rx="16"/>
+        <text class="t-muted" x="260" y="58" text-anchor="middle" lang="en">persistence context (one per transaction)</text><text class="t-muted" x="260" y="58" text-anchor="middle" lang="zh-Hant-TW">persistence context（每個交易一本）</text>
+        <rect class="row" x="45" y="80" width="200" height="110" rx="12"/>
+        <text class="t-muted" x="145" y="108" text-anchor="middle" lang="en">snapshot</text><text class="t-muted" x="145" y="108" text-anchor="middle" lang="zh-Hant-TW">快照</text>
+        <text class="t-code" x="145" y="148" text-anchor="middle">name="Ann"</text>
+        <rect class="box sa" x="275" y="80" width="200" height="110" rx="12"/>
+        <text class="t-muted" x="375" y="108" text-anchor="middle" lang="en">your object</text><text class="t-muted" x="375" y="108" text-anchor="middle" lang="zh-Hant-TW">你的物件</text>
+        <text class="t-code" x="375" y="148" text-anchor="middle">name="Amy"</text>
+        <path class="line" d="M510 125 H560"/><polygon class="fmuted" points="560,118 574,125 560,132"/>
+        <rect class="box" x="580" y="80" width="200" height="90" rx="12"/>
+        <text class="t-sm" x="680" y="114" text-anchor="middle" lang="en">at flush:</text><text class="t-sm" x="680" y="114" text-anchor="middle" lang="zh-Hant-TW">flush 時：</text>
+        <text class="t-code" x="680" y="142" text-anchor="middle">UPDATE customer…</text>
+      </svg>
+    </figure>
+    <p>
+      <span lang="en">No <code>save()</code> needed: comparing the object with its snapshot is called dirty checking. It costs memory and time for every entity loaded, even unchanged ones.</span>
+      <span lang="zh-Hant-TW">不需要呼叫 <code>save()</code>：把物件和快照比對，就叫 dirty checking。每個載入的 entity 都要花記憶體和時間，就算沒改也一樣。</span>
+    </p>
+  </section>
+
+  <section class="panel">
+    <h2><span lang="en">What <code>readOnly = true</code> really does</span><span lang="zh-Hant-TW"><code>readOnly = true</code> 實際做了什麼</span></h2>
+    <figure>
+      <svg viewBox="0 0 800 180" role="img" aria-labelledby="ro">
+        <title id="ro">readOnly sets flush mode manual, keeps no snapshots, and marks the JDBC connection read-only</title>
+        <rect class="box" x="10" y="20" width="250" height="140" rx="14"/>
+        <text class="t-sm" x="135" y="80" text-anchor="middle" lang="en">no automatic flush</text><text class="t-sm" x="135" y="80" text-anchor="middle" lang="zh-Hant-TW">不自動 flush</text>
+        <text class="t-code" x="135" y="110" text-anchor="middle">FlushMode.MANUAL</text>
+        <rect class="box" x="275" y="20" width="250" height="140" rx="14"/>
+        <text class="t-sm" x="400" y="80" text-anchor="middle" lang="en">no snapshots kept</text><text class="t-sm" x="400" y="80" text-anchor="middle" lang="zh-Hant-TW">不保留快照</text>
+        <text class="t-muted" x="400" y="110" text-anchor="middle" lang="en">read-only session</text><text class="t-muted" x="400" y="110" text-anchor="middle" lang="zh-Hant-TW">唯讀 session</text>
+        <rect class="box" x="540" y="20" width="250" height="140" rx="14"/>
+        <text class="t-sm" x="665" y="80" text-anchor="middle" lang="en">connection flagged</text><text class="t-sm" x="665" y="80" text-anchor="middle" lang="zh-Hant-TW">連線標成唯讀</text>
+        <text class="t-code" x="665" y="110" text-anchor="middle">setReadOnly(true)</text>
+      </svg>
+    </figure>
+    <p>
+      <span lang="en">A good optimization for read paths, not a security wall: whether the database itself refuses writes depends on the driver.</span>
+      <span lang="zh-Hant-TW">對讀取路徑是很好的優化，但不是安全防線：資料庫本身會不會拒絕寫入，要看 driver。</span>
+    </p>
+  </section>
+
+  <section class="panel trap">
+    <h2><span lang="en">Bulk updates skip the notebook</span><span lang="zh-Hant-TW">批次更新會繞過筆記本</span></h2>
+    <p>
+      <span lang="en">A <code>@Modifying</code> JPQL update writes straight to the database. Entities already in the notebook keep their old values. Use <code>clearAutomatically = true</code>, or don't load them first.</span>
+      <span lang="zh-Hant-TW"><code>@Modifying</code> 的 JPQL update 會直接寫進資料庫，已經記在筆記本裡的 entity 還是舊值。請用 <code>clearAutomatically = true</code>，或者不要先把它們載入。</span>
+    </p>
+  </section>
+
+  <section class="panel fix">
+    <h2><span lang="en"><code>save()</code> is persist or merge</span><span lang="zh-Hant-TW"><code>save()</code> 其實是 persist 或 merge</span></h2>
+    <p>
+      <span lang="en">Spring Data decides "new" by a <code>null</code> version or <code>null</code> id. If you assign ids yourself (UUIDs), every <code>save()</code> merges, which runs an extra <code>SELECT</code>. Implement <code>Persistable</code> to fix it.</span>
+      <span lang="zh-Hant-TW">Spring Data 用 version 或 id 是不是 <code>null</code> 來判斷「新的」。如果 id 是你自己給的（例如 UUID），每次 <code>save()</code> 都會走 merge，多跑一次 <code>SELECT</code>。實作 <code>Persistable</code> 就能解決。</span>
+    </p>
+  </section>
+</main>
+
+<footer>
+  <ul>
+    <li><span lang="en">Go deeper:</span><span lang="zh-Hant-TW">深入閱讀：</span> <a href="https://github.com/xinqilin/claude-dev-toolkit-marketplace/blob/master/plugins/java-backend/skills/jpa-hibernate/references/persistence-context.md">persistence-context.md</a></li>
+    <li><span lang="en">Official docs:</span><span lang="zh-Hant-TW">官方文件：</span> <a href="https://docs.hibernate.org/orm/7.4/userguide/html_single/">Hibernate ORM 7.4 user guide</a> · <a href="https://docs.spring.io/spring-data/jpa/reference/jpa/entity-persistence.html">Spring Data JPA: persisting entities</a></li>
+  </ul>
+  <p><a href="index.html"><span lang="en">All topics</span><span lang="zh-Hant-TW">所有主題</span></a></p>
+</footer>
+</body>
+</html>

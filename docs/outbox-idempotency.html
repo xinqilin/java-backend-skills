@@ -1,0 +1,109 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Outbox and Idempotency</title>
+<meta name="description" content="Why saving to the database and publishing an event can't be two steps, and how the transactional outbox and idempotency keys fix it.">
+<link rel="stylesheet" href="assets/eli5.css">
+<script src="assets/lang.js"></script>
+</head>
+<body>
+<header class="top">
+  <a class="home" href="index.html">java-backend</a>
+  <button class="lang-toggle" type="button">中文</button>
+</header>
+
+<main>
+  <p class="kicker"><span lang="en">Transactions and consistency · DDIA</span><span lang="zh-Hant-TW">交易與一致性 · DDIA</span></p>
+  <h1><span lang="en">Outbox and idempotency</span><span lang="zh-Hant-TW">Outbox 與冪等性</span></h1>
+  <p class="lead">
+    <span lang="en">Saving an order and telling other systems about it are two different places. If they can disagree, eventually they will.</span>
+    <span lang="zh-Hant-TW">存訂單和通知其他系統是兩個不同的地方。只要它們有可能不一致，總有一天會不一致。</span>
+  </p>
+
+  <section class="panel trap">
+    <h2><span lang="en">The dual write</span><span lang="zh-Hant-TW">雙寫問題</span></h2>
+    <figure>
+      <svg viewBox="0 0 800 230" role="img" aria-labelledby="dual">
+        <title id="dual">The service commits to the database, then the process crashes before publishing to the broker, so the event is lost</title>
+        <rect class="box" x="20" y="80" width="170" height="70" rx="14"/>
+        <text class="t" x="105" y="122" text-anchor="middle">Service</text>
+        <path class="line" d="M200 100 L330 50"/><polygon class="fmuted" points="326,42 342,46 331,57"/>
+        <rect class="box" x="350" y="20" width="200" height="60" rx="14"/>
+        <text class="t-sm" x="450" y="56" text-anchor="middle" lang="en">Database: saved ✓</text><text class="t-sm" x="450" y="56" text-anchor="middle" lang="zh-Hant-TW">資料庫：已存 ✓</text>
+        <path class="dash" d="M200 130 L330 180"/>
+        <rect class="box sbad" x="350" y="150" width="200" height="60" rx="14"/>
+        <text class="t-sm" x="450" y="186" text-anchor="middle" lang="en">Broker: never sent</text><text class="t-sm" x="450" y="186" text-anchor="middle" lang="zh-Hant-TW">Broker：沒送出</text>
+        <circle class="fbad" cx="270" cy="160" r="20"/><text class="on-color" x="270" y="166" text-anchor="middle">⚡</text>
+        <text class="t-sm fbad" x="590" y="112" lang="en">crash between steps</text><text class="t-sm fbad" x="590" y="112" lang="zh-Hant-TW">兩步之間當機</text>
+        <text class="t-muted" x="590" y="138" lang="en">→ event lost forever</text><text class="t-muted" x="590" y="138" lang="zh-Hant-TW">→ 事件永遠消失</text>
+      </svg>
+    </figure>
+    <p>
+      <span lang="en">Publishing first is no better: if the transaction then rolls back, consumers act on an order that never existed.</span>
+      <span lang="zh-Hant-TW">先發送也沒比較好：如果交易接著 rollback，下游會處理一筆根本不存在的訂單。</span>
+    </p>
+  </section>
+
+  <section class="panel fix">
+    <h2><span lang="en">The outbox: one transaction, then a relay</span><span lang="zh-Hant-TW">Outbox：一個交易，再交給轉送程式</span></h2>
+    <figure>
+      <svg viewBox="0 0 800 220" role="img" aria-labelledby="outbox">
+        <title id="outbox">The order row and an outbox row are written in the same transaction; a relay reads the outbox and publishes to the broker</title>
+        <rect class="box" x="20" y="20" width="360" height="180" rx="16"/>
+        <text class="t-muted" x="200" y="50" text-anchor="middle" lang="en">one database transaction</text><text class="t-muted" x="200" y="50" text-anchor="middle" lang="zh-Hant-TW">同一個資料庫交易</text>
+        <rect class="row" x="50" y="70" width="140" height="100" rx="12"/>
+        <text class="t-sm" x="120" y="126" text-anchor="middle">orders</text>
+        <rect class="row" x="210" y="70" width="140" height="100" rx="12"/>
+        <text class="t-sm" x="280" y="126" text-anchor="middle">outbox</text>
+        <path class="line" d="M390 110 H460"/><polygon class="fmuted" points="460,103 474,110 460,117"/>
+        <rect class="box" x="480" y="80" width="130" height="60" rx="12"/>
+        <text class="t-sm" x="545" y="116" text-anchor="middle" lang="en">relay</text><text class="t-sm" x="545" y="116" text-anchor="middle" lang="zh-Hant-TW">轉送程式</text>
+        <path class="line" d="M620 110 H670"/><polygon class="fmuted" points="670,103 684,110 670,117"/>
+        <rect class="box" x="690" y="80" width="95" height="60" rx="12"/>
+        <text class="t-sm" x="737" y="116" text-anchor="middle">broker</text>
+      </svg>
+    </figure>
+    <p>
+      <span lang="en">Either both rows commit or neither does. The relay may publish the same event twice (it can crash after sending and before marking it sent), so consumers must ignore duplicates by event id.</span>
+      <span lang="zh-Hant-TW">兩筆資料要嘛一起 commit，要嘛都沒有。轉送程式可能把同一個事件送兩次（送出後、標記已送前當機），所以下游要依事件 id 忽略重複的事件。</span>
+    </p>
+  </section>
+
+  <section class="panel fix">
+    <h2><span lang="en">Idempotency keys: retries do it once</span><span lang="zh-Hant-TW">Idempotency key：重試只會生效一次</span></h2>
+    <figure>
+      <svg viewBox="0 0 800 220" role="img" aria-labelledby="idem">
+        <title id="idem">The client retries a payment with the same key; the second request finds the stored result and replays it instead of paying again</title>
+        <rect class="box" x="20" y="30" width="190" height="60" rx="12"/>
+        <text class="t-code" x="115" y="66" text-anchor="middle">key=7f3a  #1</text>
+        <rect class="box" x="20" y="130" width="190" height="60" rx="12"/>
+        <text class="t-code" x="115" y="166" text-anchor="middle">key=7f3a  #2</text>
+        <path class="line" d="M220 60 H330"/><polygon class="fmuted" points="330,53 344,60 330,67"/>
+        <path class="line" d="M220 160 H330"/><polygon class="fmuted" points="330,153 344,160 330,167"/>
+        <rect class="box" x="350" y="30" width="200" height="60" rx="12"/>
+        <text class="t-sm" x="450" y="66" text-anchor="middle" lang="en">pay + store key</text><text class="t-sm" x="450" y="66" text-anchor="middle" lang="zh-Hant-TW">付款 + 記下 key</text>
+        <rect class="box" x="350" y="130" width="200" height="60" rx="12"/>
+        <text class="t-sm" x="450" y="166" text-anchor="middle" lang="en">key exists → replay</text><text class="t-sm" x="450" y="166" text-anchor="middle" lang="zh-Hant-TW">key 已存在 → 回傳原結果</text>
+        <rect class="row" x="590" y="70" width="190" height="80" rx="12"/>
+        <text class="t-sm" x="685" y="104" text-anchor="middle" lang="en">charged once</text><text class="t-sm" x="685" y="104" text-anchor="middle" lang="zh-Hant-TW">只扣一次款</text>
+        <text class="t-muted" x="685" y="130" text-anchor="middle">UNIQUE(idem_key)</text>
+      </svg>
+    </figure>
+    <p>
+      <span lang="en">Store the key under a unique constraint in the same transaction as the payment. Two concurrent duplicates can't both insert it.</span>
+      <span lang="zh-Hant-TW">把 key 和付款放在同一個交易裡存，並加上 unique constraint。兩個同時到達的重複請求，不可能都存得進去。</span>
+    </p>
+  </section>
+</main>
+
+<footer>
+  <ul>
+    <li><span lang="en">Go deeper:</span><span lang="zh-Hant-TW">深入閱讀：</span> <a href="https://github.com/xinqilin/claude-dev-toolkit-marketplace/blob/master/plugins/java-backend/skills/transactions-consistency/references/distributed-data.md">distributed-data.md</a></li>
+    <li><span lang="en">Further reading:</span><span lang="zh-Hant-TW">延伸閱讀：</span> Kleppmann, <cite>Designing Data-Intensive Applications</cite>, ch. 11 "Stream Processing" · ch. 12 "The Future of Data Systems"</li>
+  </ul>
+  <p><a href="index.html"><span lang="en">All topics</span><span lang="zh-Hant-TW">所有主題</span></a></p>
+</footer>
+</body>
+</html>

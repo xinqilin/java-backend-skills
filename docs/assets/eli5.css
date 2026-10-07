@@ -1,0 +1,246 @@
+/* java-backend ELI5 explainers: shared styles. Light and dark themes, bilingual (en / zh-Hant-TW). */
+
+:root {
+  --bg: #f7f6f2;
+  --surface: #ffffff;
+  --text: #1d1f24;
+  --muted: #5c6370;
+  --line: #d9d6cc;
+  --row: #eef2f8;
+  --accent: #2f6fd6;
+  --a: #2f6fd6;        /* transaction A */
+  --b: #b4508d;        /* transaction B */
+  --ok: #2e8b57;
+  --bad: #c8463b;
+  --warn: #b97a0c;
+  --code-bg: #f0eee8;
+  --radius: 14px;
+  color-scheme: light;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #15171c;
+    --surface: #1d2027;
+    --text: #e8e6e1;
+    --muted: #a3a8b3;
+    --line: #363a46;
+    --row: #252a33;
+    --accent: #7aa7ff;
+    --a: #7aa7ff;
+    --b: #e58ac1;
+    --ok: #5cc48a;
+    --bad: #ff7b6e;
+    --warn: #f2b84b;
+    --code-bg: #262a32;
+    color-scheme: dark;
+  }
+}
+
+:root[data-theme="dark"] {
+  --bg: #15171c;
+  --surface: #1d2027;
+  --text: #e8e6e1;
+  --muted: #a3a8b3;
+  --line: #363a46;
+  --row: #252a33;
+  --accent: #7aa7ff;
+  --a: #7aa7ff;
+  --b: #e58ac1;
+  --ok: #5cc48a;
+  --bad: #ff7b6e;
+  --warn: #f2b84b;
+  --code-bg: #262a32;
+  color-scheme: dark;
+}
+
+* { box-sizing: border-box; }
+
+html { -webkit-text-size-adjust: 100%; }
+
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--text);
+  font: 17px/1.6 system-ui, -apple-system, "Segoe UI", "Noto Sans TC", "PingFang TC", "Microsoft JhengHei", sans-serif;
+}
+
+/* Language switching: one language is visible at a time. The head script sets data-lang before render. */
+html:not([data-lang="zh"]) body [lang="zh-Hant-TW"],
+html[data-lang="zh"] body [lang="en"] {
+  display: none !important;
+}
+
+a { color: var(--accent); }
+a:focus-visible, button:focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; }
+
+.top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  max-width: 960px;
+  margin: 0 auto;
+  padding: 16px;
+}
+
+.home {
+  font-weight: 700;
+  text-decoration: none;
+  color: var(--text);
+}
+
+.lang-toggle {
+  border: 1px solid var(--line);
+  background: var(--surface);
+  color: var(--text);
+  border-radius: 999px;
+  padding: 6px 14px;
+  font: inherit;
+  font-size: 15px;
+  cursor: pointer;
+}
+
+main {
+  max-width: 960px;
+  margin: 0 auto;
+  padding: 0 16px 32px;
+}
+
+.kicker {
+  margin: 8px 0 0;
+  color: var(--muted);
+  font-size: 15px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+}
+
+h1 {
+  font-size: clamp(30px, 6vw, 46px);
+  line-height: 1.15;
+  margin: 6px 0 12px;
+}
+
+h2 {
+  font-size: clamp(21px, 3.6vw, 26px);
+  line-height: 1.25;
+  margin: 0 0 10px;
+}
+
+.lead {
+  font-size: clamp(18px, 2.6vw, 21px);
+  color: var(--muted);
+  margin: 0 0 24px;
+  max-width: 46em;
+}
+
+.panel {
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  padding: 20px;
+  margin: 0 0 20px;
+}
+
+.panel p { margin: 10px 0 0; max-width: 46em; }
+
+.panel.fix { border-left: 6px solid var(--ok); }
+.panel.trap { border-left: 6px solid var(--bad); }
+
+figure { margin: 0; }
+
+figure svg {
+  display: block;
+  width: 100%;
+  height: auto;
+}
+
+figcaption {
+  color: var(--muted);
+  font-size: 15px;
+  margin-top: 8px;
+}
+
+code, pre {
+  font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  font-size: 0.9em;
+}
+
+code {
+  background: var(--code-bg);
+  padding: 1px 6px;
+  border-radius: 6px;
+}
+
+pre {
+  background: var(--code-bg);
+  padding: 14px 16px;
+  border-radius: 10px;
+  overflow-x: auto;
+  line-height: 1.45;
+}
+
+pre code { background: none; padding: 0; }
+
+.cards {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+  gap: 16px;
+  margin: 0 0 28px;
+  padding: 0;
+  list-style: none;
+}
+
+.cards a {
+  display: block;
+  height: 100%;
+  padding: 18px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--surface);
+  color: var(--text);
+  text-decoration: none;
+}
+
+.cards a:hover { border-color: var(--accent); }
+
+.cards strong { display: block; font-size: 18px; margin-bottom: 4px; }
+
+.cards span.desc { color: var(--muted); font-size: 15px; }
+
+.group-title { margin: 28px 0 12px; }
+
+footer {
+  max-width: 960px;
+  margin: 0 auto;
+  padding: 0 16px 40px;
+  color: var(--muted);
+  font-size: 15px;
+}
+
+footer ul { padding-left: 20px; margin: 6px 0; }
+
+/* SVG vocabulary */
+.svg-bg { fill: var(--bg); }
+.box { fill: var(--surface); stroke: var(--line); stroke-width: 2; }
+.row { fill: var(--row); stroke: var(--line); stroke-width: 2; }
+.lane-a { fill: none; stroke: var(--a); stroke-width: 3; }
+.lane-b { fill: none; stroke: var(--b); stroke-width: 3; }
+.line { fill: none; stroke: var(--muted); stroke-width: 2; }
+.dash { fill: none; stroke: var(--muted); stroke-width: 2; stroke-dasharray: 6 6; }
+.t { fill: var(--text); font: 600 20px system-ui, sans-serif; }
+.t-sm { fill: var(--text); font: 500 16px system-ui, sans-serif; }
+.t-muted { fill: var(--muted); font: 500 15px system-ui, sans-serif; }
+.t-big { fill: var(--text); font: 700 30px system-ui, sans-serif; }
+.t-code { fill: var(--text); font: 500 15px ui-monospace, Menlo, Consolas, monospace; }
+.fa { fill: var(--a); }
+.fb { fill: var(--b); }
+.fok { fill: var(--ok); }
+.fbad { fill: var(--bad); }
+.fwarn { fill: var(--warn); }
+.fmuted { fill: var(--muted); }
+.sa { stroke: var(--a); }
+.sb { stroke: var(--b); }
+.sok { stroke: var(--ok); }
+.sbad { stroke: var(--bad); }
+.on-color { fill: #ffffff; font: 600 16px system-ui, sans-serif; }

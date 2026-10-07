@@ -1,0 +1,128 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Lost Update and Write Skew</title>
+<meta name="description" content="How two concurrent requests lose money in Spring Boot with MySQL or PostgreSQL, and the guards that stop it.">
+<link rel="stylesheet" href="assets/eli5.css">
+<script src="assets/lang.js"></script>
+</head>
+<body>
+<header class="top">
+  <a class="home" href="index.html">java-backend</a>
+  <button class="lang-toggle" type="button">中文</button>
+</header>
+
+<main>
+  <p class="kicker"><span lang="en">Transactions and consistency</span><span lang="zh-Hant-TW">交易與一致性</span></p>
+  <h1><span lang="en">Lost update and write skew</span><span lang="zh-Hant-TW">Lost update 與 write skew</span></h1>
+  <p class="lead">
+    <span lang="en">Two requests arrive at the same time. Each one is correct alone. Together, they break your data, even inside <code>@Transactional</code>.</span>
+    <span lang="zh-Hant-TW">兩個請求同時到達。各自單獨跑都沒問題，一起跑就把資料弄壞了，即使包在 <code>@Transactional</code> 裡也一樣。</span>
+  </p>
+
+  <section class="panel trap">
+    <h2><span lang="en">Lost update: two withdrawals of 10</span><span lang="zh-Hant-TW">Lost update：同時提款兩次，各 10 元</span></h2>
+    <figure>
+      <svg viewBox="0 0 800 300" role="img" aria-labelledby="lu">
+        <title id="lu">Both transactions read balance 100, both write 90, final balance 90 instead of 80</title>
+        <text class="t-sm fa" x="20" y="72" lang="en">Request A</text><text class="t-sm fa" x="20" y="72" lang="zh-Hant-TW">請求 A</text>
+        <text class="t-sm fb" x="20" y="172" lang="en">Request B</text><text class="t-sm fb" x="20" y="172" lang="zh-Hant-TW">請求 B</text>
+        <path class="lane-a" d="M120 66 H600"/>
+        <path class="lane-b" d="M120 166 H600"/>
+        <rect class="box sa" x="140" y="40" width="130" height="52" rx="10"/><text class="t-sm" x="205" y="72" text-anchor="middle" lang="en">read 100</text><text class="t-sm" x="205" y="72" text-anchor="middle" lang="zh-Hant-TW">讀到 100</text>
+        <rect class="box sb" x="230" y="140" width="130" height="52" rx="10"/><text class="t-sm" x="295" y="172" text-anchor="middle" lang="en">read 100</text><text class="t-sm" x="295" y="172" text-anchor="middle" lang="zh-Hant-TW">讀到 100</text>
+        <rect class="box sa" x="330" y="40" width="130" height="52" rx="10"/><text class="t-sm" x="395" y="72" text-anchor="middle" lang="en">write 90</text><text class="t-sm" x="395" y="72" text-anchor="middle" lang="zh-Hant-TW">寫入 90</text>
+        <rect class="box sb" x="440" y="140" width="130" height="52" rx="10"/><text class="t-sm" x="505" y="172" text-anchor="middle" lang="en">write 90</text><text class="t-sm" x="505" y="172" text-anchor="middle" lang="zh-Hant-TW">寫入 90</text>
+        <path class="line" d="M120 230 H600"/><polygon class="fmuted" points="600,223 614,230 600,237"/>
+        <text class="t-muted" x="360" y="258" text-anchor="middle" lang="en">time</text><text class="t-muted" x="360" y="258" text-anchor="middle" lang="zh-Hant-TW">時間</text>
+        <rect class="row" x="640" y="70" width="140" height="100" rx="14"/>
+        <text class="t-muted" x="710" y="100" text-anchor="middle" lang="en">balance</text><text class="t-muted" x="710" y="100" text-anchor="middle" lang="zh-Hant-TW">餘額</text>
+        <text class="t-big fbad" x="710" y="145" text-anchor="middle">90</text>
+        <text class="t-sm fok" x="710" y="200" text-anchor="middle" lang="en">should be 80</text><text class="t-sm fok" x="710" y="200" text-anchor="middle" lang="zh-Hant-TW">應該是 80</text>
+      </svg>
+    </figure>
+    <p>
+      <span lang="en">Each request loads the account, subtracts in Java, and saves. The second save overwrites the first one.</span>
+      <span lang="zh-Hant-TW">兩個請求都是讀出帳戶、在 Java 裡相減、再存回去。第二次存檔把第一次蓋掉了。</span>
+    </p>
+  </section>
+
+  <section class="panel">
+    <h2><span lang="en">What each database does at step 4</span><span lang="zh-Hant-TW">第 4 步，各資料庫怎麼處理</span></h2>
+    <figure>
+      <svg viewBox="0 0 800 230" role="img" aria-labelledby="db">
+        <title id="db">MySQL REPEATABLE READ and PostgreSQL READ COMMITTED accept the second write silently; PostgreSQL REPEATABLE READ rejects it with error 40001</title>
+        <rect class="box" x="20" y="20" width="240" height="190" rx="14"/>
+        <text class="t" x="140" y="56" text-anchor="middle">MySQL</text>
+        <text class="t-muted" x="140" y="82" text-anchor="middle">REPEATABLE READ</text>
+        <text class="t-muted" x="140" y="102" text-anchor="middle" lang="en">(default)</text><text class="t-muted" x="140" y="102" text-anchor="middle" lang="zh-Hant-TW">（預設）</text>
+        <circle class="fbad" cx="140" cy="148" r="26"/><text class="on-color" x="140" y="154" text-anchor="middle">✕</text>
+        <text class="t-sm" x="140" y="196" text-anchor="middle" lang="en">silently lost</text><text class="t-sm" x="140" y="196" text-anchor="middle" lang="zh-Hant-TW">悄悄被蓋掉</text>
+        <rect class="box" x="280" y="20" width="240" height="190" rx="14"/>
+        <text class="t" x="400" y="56" text-anchor="middle">PostgreSQL</text>
+        <text class="t-muted" x="400" y="82" text-anchor="middle">READ COMMITTED</text>
+        <text class="t-muted" x="400" y="102" text-anchor="middle" lang="en">(default)</text><text class="t-muted" x="400" y="102" text-anchor="middle" lang="zh-Hant-TW">（預設）</text>
+        <circle class="fbad" cx="400" cy="148" r="26"/><text class="on-color" x="400" y="154" text-anchor="middle">✕</text>
+        <text class="t-sm" x="400" y="196" text-anchor="middle" lang="en">silently lost</text><text class="t-sm" x="400" y="196" text-anchor="middle" lang="zh-Hant-TW">悄悄被蓋掉</text>
+        <rect class="box" x="540" y="20" width="240" height="190" rx="14"/>
+        <text class="t" x="660" y="56" text-anchor="middle">PostgreSQL</text>
+        <text class="t-muted" x="660" y="82" text-anchor="middle">REPEATABLE READ</text>
+        <circle class="fwarn" cx="660" cy="138" r="26"/><text class="on-color" x="660" y="144" text-anchor="middle">!</text>
+        <text class="t-sm" x="660" y="186" text-anchor="middle" lang="en">error 40001: retry</text><text class="t-sm" x="660" y="186" text-anchor="middle" lang="zh-Hant-TW">錯誤 40001：要重試</text>
+      </svg>
+    </figure>
+    <p>
+      <span lang="en">"REPEATABLE READ prevents lost updates" is only true for PostgreSQL. In MySQL, the <code>UPDATE</code> applies to the newest row and no error is raised.</span>
+      <span lang="zh-Hant-TW">「REPEATABLE READ 能防止 lost update」只對 PostgreSQL 成立。在 MySQL，<code>UPDATE</code> 會直接套用在最新的那一筆上，不會報錯。</span>
+    </p>
+  </section>
+
+  <section class="panel fix">
+    <h2><span lang="en">The fix: let the database check</span><span lang="zh-Hant-TW">解法：讓資料庫來檢查</span></h2>
+<pre><code>@Modifying
+@Query("update Account a set a.balance = a.balance - :amt " +
+       "where a.id = :id and a.balance &gt;= :amt")
+int withdraw(@Param("id") long id, @Param("amt") BigDecimal amt); // 0 rows = rejected</code></pre>
+    <p>
+      <span lang="en">One statement reads and writes, so nothing can sneak in between. Other options: a <code>@Version</code> column (the loser gets an error and retries), or <code>SELECT … FOR UPDATE</code> (the second request waits).</span>
+      <span lang="zh-Hant-TW">讀和寫在同一個 SQL 完成，中間沒有空隙可以插隊。其他做法：加 <code>@Version</code> 欄位（後到的會收到錯誤並重試），或用 <code>SELECT … FOR UPDATE</code>（第二個請求會排隊等待）。</span>
+    </p>
+  </section>
+
+  <section class="panel trap">
+    <h2><span lang="en">Write skew: the last doctor on call</span><span lang="zh-Hant-TW">Write skew：最後一位值班醫生</span></h2>
+    <figure>
+      <svg viewBox="0 0 800 250" role="img" aria-labelledby="ws">
+        <title id="ws">Two doctors both see two on call, each takes only their own row off call, and nobody is left on call</title>
+        <text class="t-sm fa" x="20" y="62" lang="en">Dr. A</text><text class="t-sm fa" x="20" y="62" lang="zh-Hant-TW">A 醫生</text>
+        <text class="t-sm fb" x="20" y="162" lang="en">Dr. B</text><text class="t-sm fb" x="20" y="162" lang="zh-Hant-TW">B 醫生</text>
+        <path class="lane-a" d="M110 56 H560"/><path class="lane-b" d="M110 156 H560"/>
+        <rect class="box sa" x="130" y="30" width="170" height="52" rx="10"/><text class="t-sm" x="215" y="62" text-anchor="middle" lang="en">sees 2 on call</text><text class="t-sm" x="215" y="62" text-anchor="middle" lang="zh-Hant-TW">看到 2 人值班</text>
+        <rect class="box sb" x="160" y="130" width="170" height="52" rx="10"/><text class="t-sm" x="245" y="162" text-anchor="middle" lang="en">sees 2 on call</text><text class="t-sm" x="245" y="162" text-anchor="middle" lang="zh-Hant-TW">看到 2 人值班</text>
+        <rect class="box sa" x="350" y="30" width="190" height="52" rx="10"/><text class="t-sm" x="445" y="62" text-anchor="middle" lang="en">A goes off call</text><text class="t-sm" x="445" y="62" text-anchor="middle" lang="zh-Hant-TW">A 下班</text>
+        <rect class="box sb" x="370" y="130" width="190" height="52" rx="10"/><text class="t-sm" x="465" y="162" text-anchor="middle" lang="en">B goes off call</text><text class="t-sm" x="465" y="162" text-anchor="middle" lang="zh-Hant-TW">B 下班</text>
+        <rect class="row" x="600" y="60" width="180" height="110" rx="14"/>
+        <text class="t-muted" x="690" y="92" text-anchor="middle" lang="en">on call</text><text class="t-muted" x="690" y="92" text-anchor="middle" lang="zh-Hant-TW">值班人數</text>
+        <text class="t-big fbad" x="690" y="140" text-anchor="middle">0</text>
+        <text class="t-muted" x="400" y="226" text-anchor="middle" lang="en">They changed different rows, so no row lock ever collided.</text>
+        <text class="t-muted" x="400" y="226" text-anchor="middle" lang="zh-Hant-TW">兩人改的是不同的資料列，所以 row lock 從來沒有撞在一起。</text>
+      </svg>
+    </figure>
+    <p>
+      <span lang="en">PostgreSQL REPEATABLE READ allows this. SERIALIZABLE stops it (one transaction fails with 40001 and retries). Locking the rows you checked (<code>FOR UPDATE</code>) also works. If the conflicting row doesn't exist yet, such as a double booking, use a constraint.</span>
+      <span lang="zh-Hant-TW">PostgreSQL 的 REPEATABLE READ 擋不住這種情況。SERIALIZABLE 擋得住（其中一筆會以 40001 失敗，重試即可）。把檢查過的資料列鎖起來（<code>FOR UPDATE</code>）也行。如果會衝突的那一列根本還不存在（例如重複訂位），就要用 constraint。</span>
+    </p>
+  </section>
+</main>
+
+<footer>
+  <ul>
+    <li><span lang="en">Go deeper:</span><span lang="zh-Hant-TW">深入閱讀：</span> <a href="https://github.com/xinqilin/claude-dev-toolkit-marketplace/blob/master/plugins/java-backend/skills/transactions-consistency/references/isolation-by-database.md">isolation-by-database.md</a> · <a href="https://github.com/xinqilin/claude-dev-toolkit-marketplace/blob/master/plugins/java-backend/skills/transactions-consistency/references/guards-and-retries.md">guards-and-retries.md</a></li>
+    <li><span lang="en">Official docs:</span><span lang="zh-Hant-TW">官方文件：</span> <a href="https://dev.mysql.com/doc/refman/8.4/en/innodb-consistent-read.html">MySQL consistent reads</a> · <a href="https://www.postgresql.org/docs/current/transaction-iso.html">PostgreSQL transaction isolation</a></li>
+  </ul>
+  <p><a href="index.html"><span lang="en">All topics</span><span lang="zh-Hant-TW">所有主題</span></a></p>
+</footer>
+</body>
+</html>

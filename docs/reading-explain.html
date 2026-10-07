@@ -1,0 +1,89 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Reading EXPLAIN</title>
+<meta name="description" content="How to read a query plan in MySQL and PostgreSQL: estimated versus actual rows, scans, sorts, and loops.">
+<link rel="stylesheet" href="assets/eli5.css">
+<script src="assets/lang.js"></script>
+</head>
+<body>
+<header class="top">
+  <a class="home" href="index.html">java-backend</a>
+  <button class="lang-toggle" type="button">中文</button>
+</header>
+
+<main>
+  <p class="kicker"><span lang="en">Indexes and performance</span><span lang="zh-Hant-TW">Index 與效能</span></p>
+  <h1><span lang="en">Reading EXPLAIN</span><span lang="zh-Hant-TW">看懂 EXPLAIN</span></h1>
+  <p class="lead">
+    <span lang="en">A plan is the database's to-do list for your query. <code>EXPLAIN</code> shows the guess; <code>EXPLAIN ANALYZE</code> runs it and shows what really happened.</span>
+    <span lang="zh-Hant-TW">執行計畫就是資料庫處理這個查詢的待辦清單。<code>EXPLAIN</code> 給你它的猜測；<code>EXPLAIN ANALYZE</code> 會真的執行，告訴你實際發生了什麼。</span>
+  </p>
+
+  <section class="panel">
+    <h2><span lang="en">Guess vs. reality</span><span lang="zh-Hant-TW">猜測與實際</span></h2>
+    <figure>
+      <svg viewBox="0 0 800 200" role="img" aria-labelledby="est">
+        <title id="est">The planner estimated 10 rows but the query actually produced 50,000, a sign of stale statistics</title>
+        <rect class="box" x="20" y="30" width="340" height="140" rx="14"/>
+        <text class="t-muted" x="190" y="66" text-anchor="middle" lang="en">estimated rows</text><text class="t-muted" x="190" y="66" text-anchor="middle" lang="zh-Hant-TW">預估筆數</text>
+        <text class="t-big" x="190" y="124" text-anchor="middle">10</text>
+        <rect class="box sbad" x="440" y="30" width="340" height="140" rx="14"/>
+        <text class="t-muted" x="610" y="66" text-anchor="middle" lang="en">actual rows</text><text class="t-muted" x="610" y="66" text-anchor="middle" lang="zh-Hant-TW">實際筆數</text>
+        <text class="t-big fbad" x="610" y="124" text-anchor="middle">50,000</text>
+      </svg>
+    </figure>
+    <p>
+      <span lang="en">A big gap means the planner was working with wrong statistics. Refresh them first (<code>ANALYZE TABLE t</code> in MySQL, <code>ANALYZE t</code> in PostgreSQL), then decide whether an index is missing.</span>
+      <span lang="zh-Hant-TW">差距很大，代表規劃器用的統計資料是錯的。先更新統計（MySQL 用 <code>ANALYZE TABLE t</code>，PostgreSQL 用 <code>ANALYZE t</code>），再判斷是不是少了 index。</span>
+    </p>
+  </section>
+
+  <section class="panel">
+    <h2><span lang="en">What to look for</span><span lang="zh-Hant-TW">該看哪些地方</span></h2>
+    <figure>
+      <svg viewBox="0 0 800 300" role="img" aria-labelledby="look">
+        <title id="look">Warning signs in MySQL and PostgreSQL plans</title>
+        <rect class="box" x="10" y="10" width="385" height="280" rx="14"/>
+        <rect class="box" x="405" y="10" width="385" height="280" rx="14"/>
+        <text class="t" x="202" y="46" text-anchor="middle">MySQL</text>
+        <text class="t" x="597" y="46" text-anchor="middle">PostgreSQL</text>
+        <text class="t-code fbad" x="30" y="90">type: ALL</text>
+        <text class="t-muted" x="30" y="112" lang="en">full table scan</text><text class="t-muted" x="30" y="112" lang="zh-Hant-TW">全表掃描</text>
+        <text class="t-code fbad" x="30" y="154">Using filesort</text>
+        <text class="t-muted" x="30" y="176" lang="en">sorting not served by an index</text><text class="t-muted" x="30" y="176" lang="zh-Hant-TW">排序沒有用到 index</text>
+        <text class="t-code fok" x="30" y="218">Using index</text>
+        <text class="t-muted" x="30" y="240" lang="en">covering: table not read</text><text class="t-muted" x="30" y="240" lang="zh-Hant-TW">covering：不用讀表</text>
+        <text class="t-code fbad" x="425" y="90">Seq Scan</text>
+        <text class="t-muted" x="425" y="112" lang="en">reads the whole table</text><text class="t-muted" x="425" y="112" lang="zh-Hant-TW">讀整張表</text>
+        <text class="t-code fbad" x="425" y="154">Sort</text>
+        <text class="t-muted" x="425" y="176" lang="en">before a LIMIT: sorting everything</text><text class="t-muted" x="425" y="176" lang="zh-Hant-TW">出現在 LIMIT 前：全部排序</text>
+        <text class="t-code fwarn" x="425" y="218">loops=10000</text>
+        <text class="t-muted" x="425" y="240" lang="en">a cheap step repeated 10,000 times</text><text class="t-muted" x="425" y="240" lang="zh-Hant-TW">便宜的步驟被重複一萬次</text>
+      </svg>
+    </figure>
+  </section>
+
+  <section class="panel trap">
+    <h2><span lang="en"><code>ANALYZE</code> really runs it</span><span lang="zh-Hant-TW"><code>ANALYZE</code> 會真的執行</span></h2>
+<pre><code>BEGIN;
+EXPLAIN (ANALYZE, BUFFERS) UPDATE orders SET status = 'PAID' WHERE id = 42;
+ROLLBACK;   -- PostgreSQL: keep your data unchanged</code></pre>
+    <p>
+      <span lang="en">For an <code>UPDATE</code> or <code>DELETE</code>, wrap it in a transaction and roll back. And test on production-sized data: plans on tiny tables lie.</span>
+      <span lang="zh-Hant-TW">對 <code>UPDATE</code> 或 <code>DELETE</code> 要包在交易裡再 rollback。也要在接近正式環境大小的資料上測：小表的執行計畫不準。</span>
+    </p>
+  </section>
+</main>
+
+<footer>
+  <ul>
+    <li><span lang="en">Go deeper:</span><span lang="zh-Hant-TW">深入閱讀：</span> <a href="https://github.com/xinqilin/claude-dev-toolkit-marketplace/blob/master/plugins/java-backend/skills/sql-performance/references/mysql.md">mysql.md</a> · <a href="https://github.com/xinqilin/claude-dev-toolkit-marketplace/blob/master/plugins/java-backend/skills/sql-performance/references/postgresql.md">postgresql.md</a></li>
+    <li><span lang="en">Official docs:</span><span lang="zh-Hant-TW">官方文件：</span> <a href="https://dev.mysql.com/doc/refman/8.4/en/explain-output.html">MySQL EXPLAIN output</a> · <a href="https://www.postgresql.org/docs/current/using-explain.html">PostgreSQL: Using EXPLAIN</a></li>
+  </ul>
+  <p><a href="index.html"><span lang="en">All topics</span><span lang="zh-Hant-TW">所有主題</span></a></p>
+</footer>
+</body>
+</html>

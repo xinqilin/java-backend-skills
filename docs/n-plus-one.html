@@ -1,0 +1,102 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>N+1 Queries</title>
+<meta name="description" content="How lazy associations turn one page into hundreds of queries, the three fixes, and the pagination trap that depends on your Hibernate version.">
+<link rel="stylesheet" href="assets/eli5.css">
+<script src="assets/lang.js"></script>
+</head>
+<body>
+<header class="top">
+  <a class="home" href="index.html">java-backend</a>
+  <button class="lang-toggle" type="button">中文</button>
+</header>
+
+<main>
+  <p class="kicker"><span lang="en">JPA and Hibernate</span><span lang="zh-Hant-TW">JPA 與 Hibernate</span></p>
+  <h1><span lang="en">N+1 queries</span><span lang="zh-Hant-TW">N+1 查詢</span></h1>
+  <p class="lead">
+    <span lang="en">You ask for 100 orders. You get 1 query for the orders, plus 1 more for each order's customer.</span>
+    <span lang="zh-Hant-TW">你要 100 筆訂單。結果是 1 次查訂單，再加上每筆訂單各查 1 次客戶。</span>
+  </p>
+
+  <section class="panel trap">
+    <h2><span lang="en">One page, 101 trips to the database</span><span lang="zh-Hant-TW">一個頁面，跑資料庫 101 趟</span></h2>
+    <figure>
+      <svg viewBox="0 0 800 230" role="img" aria-labelledby="np1">
+        <title id="np1">One query loads 100 orders, then the loop triggers one customer query per order</title>
+        <rect class="box sa" x="20" y="30" width="230" height="60" rx="12"/>
+        <text class="t-code" x="135" y="66" text-anchor="middle">SELECT … orders</text>
+        <text class="t-sm fa" x="135" y="115" text-anchor="middle">× 1</text>
+        <g>
+          <rect class="box sb" x="300" y="30" width="230" height="40" rx="10"/><text class="t-code" x="415" y="56" text-anchor="middle">SELECT … customer</text>
+          <rect class="box sb" x="300" y="78" width="230" height="40" rx="10"/><text class="t-code" x="415" y="104" text-anchor="middle">SELECT … customer</text>
+          <rect class="box sb" x="300" y="126" width="230" height="40" rx="10"/><text class="t-code" x="415" y="152" text-anchor="middle">SELECT … customer</text>
+          <text class="t-big fmuted" x="415" y="200" text-anchor="middle">⋮</text>
+        </g>
+        <text class="t-sm fb" x="560" y="104" lang="en">× 100 (one per order)</text><text class="t-sm fb" x="560" y="104" text-anchor="start" lang="zh-Hant-TW">× 100（每筆訂單一次）</text>
+      </svg>
+    </figure>
+<pre><code>for (Order o : orderRepository.findByStatus(PENDING)) {
+    o.getCustomer().getName();   // lazy: one query per order
+}</code></pre>
+  </section>
+
+  <section class="panel fix">
+    <h2><span lang="en">Three fixes</span><span lang="zh-Hant-TW">三種解法</span></h2>
+    <figure>
+      <svg viewBox="0 0 800 190" role="img" aria-labelledby="fixes">
+        <title id="fixes">Fetch join loads orders and customers in one query; an entity graph does the same declaratively; batch fetching loads customers 50 at a time</title>
+        <rect class="box" x="10" y="20" width="250" height="150" rx="14"/>
+        <text class="t-code" x="135" y="62" text-anchor="middle">join fetch</text>
+        <text class="t-sm" x="135" y="100" text-anchor="middle" lang="en">1 query total</text><text class="t-sm" x="135" y="100" text-anchor="middle" lang="zh-Hant-TW">總共 1 次查詢</text>
+        <rect class="box" x="275" y="20" width="250" height="150" rx="14"/>
+        <text class="t-code" x="400" y="62" text-anchor="middle">@EntityGraph</text>
+        <text class="t-sm" x="400" y="100" text-anchor="middle" lang="en">same, per method</text><text class="t-sm" x="400" y="100" text-anchor="middle" lang="zh-Hant-TW">效果一樣，按方法設定</text>
+        <rect class="box" x="540" y="20" width="250" height="150" rx="14"/>
+        <text class="t-code" x="665" y="62" text-anchor="middle">batch fetch = 50</text>
+        <text class="t-sm" x="665" y="100" text-anchor="middle" lang="en">1 + 2 queries</text><text class="t-sm" x="665" y="100" text-anchor="middle" lang="zh-Hant-TW">1 + 2 次查詢</text>
+        <text class="t-muted" x="665" y="128" text-anchor="middle" lang="en">customers 50 at a time</text><text class="t-muted" x="665" y="128" text-anchor="middle" lang="zh-Hant-TW">客戶每次撈 50 筆</text>
+      </svg>
+    </figure>
+    <p>
+      <span lang="en"><code>FetchType.EAGER</code> is not a fix: it applies to every query that touches the entity and can't be turned off.</span>
+      <span lang="zh-Hant-TW"><code>FetchType.EAGER</code> 不算解法：它會套用在每個碰到這個 entity 的查詢，而且關不掉。</span>
+    </p>
+  </section>
+
+  <section class="panel trap">
+    <h2><span lang="en">The pagination trap (depends on your version)</span><span lang="zh-Hant-TW">分頁陷阱（要看版本）</span></h2>
+    <figure>
+      <svg viewBox="0 0 800 200" role="img" aria-labelledby="page">
+        <title id="page">A collection fetch join with Pageable: Hibernate before 7.4 loads every matching row and pages in memory; Hibernate 7.4 pages in the database on MySQL and PostgreSQL</title>
+        <rect class="box sbad" x="10" y="20" width="380" height="160" rx="14"/>
+        <text class="t" x="200" y="58" text-anchor="middle" lang="en">Hibernate before 7.4</text><text class="t" x="200" y="58" text-anchor="middle" lang="zh-Hant-TW">Hibernate 7.4 之前</text>
+        <text class="t-muted" x="200" y="84" text-anchor="middle">Spring Boot 3.x, 4.0</text>
+        <text class="t-sm fbad" x="200" y="122" text-anchor="middle" lang="en">loads ALL rows,</text><text class="t-sm fbad" x="200" y="122" text-anchor="middle" lang="zh-Hant-TW">載入全部資料，</text>
+        <text class="t-sm fbad" x="200" y="148" text-anchor="middle" lang="en">pages in memory</text><text class="t-sm fbad" x="200" y="148" text-anchor="middle" lang="zh-Hant-TW">在記憶體裡分頁</text>
+        <rect class="box sok" x="410" y="20" width="380" height="160" rx="14"/>
+        <text class="t" x="600" y="58" text-anchor="middle">Hibernate 7.4+</text>
+        <text class="t-muted" x="600" y="84" text-anchor="middle">Spring Boot 4.1</text>
+        <text class="t-sm fok" x="600" y="122" text-anchor="middle" lang="en">pages in the database</text><text class="t-sm fok" x="600" y="122" text-anchor="middle" lang="zh-Hant-TW">在資料庫端分頁</text>
+        <text class="t-muted" x="600" y="148" text-anchor="middle">MySQL · PostgreSQL</text>
+      </svg>
+    </figure>
+    <p>
+      <span lang="en">Works on every version: page the ids first, then fetch those orders with their items. Also set <code>hibernate.query.fail_on_pagination_over_collection_fetch=true</code> so an in-memory page becomes an error instead of a surprise.</span>
+      <span lang="zh-Hant-TW">所有版本都適用的寫法：先分頁取 id，再用這些 id 把訂單連同明細一起撈出來。另外設定 <code>hibernate.query.fail_on_pagination_over_collection_fetch=true</code>，讓記憶體分頁直接報錯，而不是默默發生。</span>
+    </p>
+  </section>
+</main>
+
+<footer>
+  <ul>
+    <li><span lang="en">Go deeper:</span><span lang="zh-Hant-TW">深入閱讀：</span> <a href="https://github.com/xinqilin/claude-dev-toolkit-marketplace/blob/master/plugins/java-backend/skills/jpa-hibernate/references/fetching.md">fetching.md</a></li>
+    <li><span lang="en">Official docs:</span><span lang="zh-Hant-TW">官方文件：</span> <a href="https://docs.hibernate.org/orm/7.4/userguide/html_single/">Hibernate ORM 7.4 user guide (fetching, limits with fetch joins)</a></li>
+  </ul>
+  <p><a href="index.html"><span lang="en">All topics</span><span lang="zh-Hant-TW">所有主題</span></a></p>
+</footer>
+</body>
+</html>
