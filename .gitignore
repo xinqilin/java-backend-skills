@@ -7,3 +7,5 @@ node_modules/
 *.log
 .env
 .claude
+# claude plugin eval output
+plugins/java-backend/evals/results/
