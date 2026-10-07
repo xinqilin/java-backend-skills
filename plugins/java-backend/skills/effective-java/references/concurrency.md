@@ -426,3 +426,10 @@ process(order);
 | Atomic variables | Counters, flags | AtomicInteger, AtomicReference |
 | ExecutorService | Task execution | Thread pools |
 | CompletableFuture | Async operations | Chained async tasks |
+
+## Sources
+
+- Joshua Bloch, *Effective Java* (3rd ed.), ch. 11 "Concurrency" (items 78-84)
+- Java SE API, `java.util.concurrent`: https://docs.oracle.com/en/java/javase/25/docs/api/java.base/java/util/concurrent/package-summary.html
+- JEP 491, Synchronize Virtual Threads without Pinning (Java 24): https://openjdk.org/jeps/491
+- Spring Boot reference, virtual threads: https://docs.spring.io/spring-boot/reference/features/spring-application.html

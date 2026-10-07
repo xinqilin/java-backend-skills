@@ -1,0 +1,26 @@
+name: Wrong or harmful advice
+description: The plugin gave advice that is wrong, outdated, or doesn't compile.
+labels: [bug]
+body:
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened
+      description: The command or prompt you used, and the advice you got.
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: What is correct
+      description: Link the official documentation (MySQL, PostgreSQL, Hibernate, Spring) that shows the correct behavior.
+    validations:
+      required: true
+  - type: input
+    id: versions
+    attributes:
+      label: Versions
+      description: Plugin version, Claude Code version (`claude --version`), Spring Boot, Hibernate, and database versions.
+      placeholder: java-backend 2.0.0 · Claude Code 2.1.292 · Spring Boot 4.1.1 · Hibernate 7.4.5 · PostgreSQL 18
+    validations:
+      required: true

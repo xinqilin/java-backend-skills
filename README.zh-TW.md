@@ -1,220 +1,89 @@
-# Bill Lin Dev Toolkit
+# java-backend for Claude Code
+
+[![Validate](https://github.com/xinqilin/claude-dev-toolkit-marketplace/actions/workflows/validate.yml/badge.svg)](https://github.com/xinqilin/claude-dev-toolkit-marketplace/actions/workflows/validate.yml)
+[![License: Apache-2.0](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](LICENSE)
 
 繁體中文 | [English](./README.md)
 
-企業級 Java/Spring Boot 開發工具包，提供 4 個獨立的專業 plugins。
+**一個 Claude Code plugin，用資深後端工程師的方式審查、測試、設計 Spring Boot 服務：清楚知道 Spring Data JPA、Hibernate、MySQL、PostgreSQL 在並行和高負載下的實際行為。**
 
-## 快速概覽
+## 做深，不做廣
 
-### 4 個獨立 Plugins
+這個 plugin 只涵蓋一個技術組合，但做得很深：Spring Boot 4.1（並註明 3.x 的差異）、Spring Data JPA / Hibernate 7、MySQL 8.4、PostgreSQL 18。裡面每一句關於行為的描述，都對照過原廠文件或原始碼，每份 reference 檔都列出來源。
 
-#### 1. bill-billing-unit-test-reviewer
+一般審查常漏掉、它能抓到的問題：
 
-專注於單元測試審查與最佳實踐
-
-- **Agent**: bill-billing-unit-test-reviewer
-- **Skill**: `/review-test` - 單元測試程式碼審查
-- **專長**: TDD、測試設計、覆蓋率分析、避免過度設計
-
-#### 2. bill-code-reviewer
-
-程式碼品質審查與 PR Review
-
-- **Agent**: bill-code-reviewer（預載 effective-java、clean-architecture skills）
-- **Skills**:
-  - `/code-review` - 程式碼品質審查（Clean Code + 避免過度設計）
-  - `/review-pr` - PR 變更審查（branch 差異或 GitHub PR，在 forked context 中執行）
-- **專長**: Clean Code、避免過度設計、架構評估、PR Review
-
-#### 3. bill-java-developer
-
-Spring Boot 開發與資料庫優化專家
-
-- **Agent**: bill-java-developer（預載 effective-java、clean-architecture、mysql-optimization skills）
-- **Skills**:
-  - `/design-solution` - 技術方案設計與建議
-  - `/optimize-query` - SQL/JPA 優化（在 forked context 中執行）
-- **專長**: Spring Boot、JPA、資料庫效能、企業架構
-
-#### 4. bill-java-skills
-
-Java 開發最佳實踐知識庫
-
-- **Skills**（被 agents 預載，不出現在 `/` 選單中）:
-  - `clean-architecture` - Clean Architecture 設計原則
-  - `effective-java` - Effective Java 最佳實踐
-  - `mysql-optimization` - MySQL 效能優化與 JPA 調校
-
-> **Skills vs Agents 的區別**:
->
-> - **Skills** (`/xxx`): Slash command 或自動觸發的知識庫
-> - **Agents**: 根據對話自動啟動，提供互動式協助
-
-### Agent 進階能力
-
-- **知識預載**：bill-java-developer 和 bill-code-reviewer agents 會自動預載相關知識 skills（effective-java、clean-architecture、mysql-optimization），不需手動觸發
-- **專案記憶**：所有 agents 支援 project-level memory，會跨 session 記住專案特有的模式和慣例
-- **安全限制**：reviewer agents 僅具唯讀權限，不會意外修改程式碼
-- **Gotchas 防護**：每個 skill 都包含精選的 Gotchas 區塊 — Claude 常犯的錯誤陷阱，確保更高品質的輸出
+- **看起來正確的 lost update**：包在 `@Transactional` 裡的「讀出、修改、寫回」，在 MySQL 的 REPEATABLE READ 下照樣會少算錢；PostgreSQL 的 REPEATABLE READ 則會丟出 40001。plugin 會看你用的是哪一個資料庫。
+- **Write skew**：兩個請求各自通過檢查，合起來卻破壞了規則。plugin 會指出該用哪一種防護：SERIALIZABLE 搭配重試、加鎖，或 constraint。
+- **和版本有關的 JPA 行為**：collection fetch join 搭配 `Pageable`，在 Hibernate 7.4 之前會在記憶體裡分頁，7.4 起改在資料庫端分頁（MySQL、PostgreSQL）。`IDENTITY` 主鍵會悄悄讓批次 INSERT 失效。
+- **Index 設計**：等值欄位在前、範圍或排序欄位在後，而不是「選擇性最高的欄位放最前面」。也清楚 MySQL 隱式型別轉換的陷阱，以及 online DDL 的 metadata lock。
+- **Spring Boot 4 的測試**：用 `@MockitoBean` 取代已移除的 `@MockBean`、知道 test slice 搬過 package、會用 Testcontainers 2，並寫出真正證明得了東西的並行測試。
 
 ## 安裝
 
-### 方式一：透過 /plugin marketplace（推薦，免 clone）
+在 Claude Code 裡執行：
 
-在 Claude Code 中執行：
-```
+```text
 /plugin marketplace add xinqilin/claude-dev-toolkit-marketplace
+/plugin install java-backend@xinqilin
 ```
 
-### 方式二：透過 install.sh（clone 後使用 symlinks，git pull 自動更新）
+plugin 的 `version` 變更時才會收到新版。可以執行 `claude plugin update java-backend@xinqilin`，或在 `/plugin` → **Marketplaces** → `xinqilin` 開啟自動更新。
 
-```bash
-git clone https://github.com/xinqilin/claude-dev-toolkit-marketplace
-cd claude-dev-toolkit-marketplace
-./install.sh --all
-```
-
-### 安裝指定 Plugin
-
-```bash
-# 查看可用的 plugins
-./install.sh --list
-
-# 只安裝你需要的
-./install.sh --plugin bill-code-reviewer
-./install.sh --plugin bill-java-developer
-./install.sh --plugin bill-java-skills
-./install.sh --plugin bill-billing-unit-test-reviewer
-```
-
-### 卸載
-
-```bash
-./uninstall.sh
-```
-
-### 更新
-
-**install.sh 使用者**：直接 `git pull`，symlink 自動更新，不需重新安裝。
-
-```bash
-git pull
-```
-
-**marketplace 使用者**：只有 plugin 的 `version` 變更時才會收到新版，且此 marketplace 預設不自動更新。手動更新：
-
-```bash
-claude plugin update <plugin-name>@bill-lin-dev-toolkit
-```
-
-或一次開啟自動更新：`/plugin` → **Marketplaces** → `bill-lin-dev-toolkit` → **Enable auto-update**。更新會在下個 session 或執行 `/reload-plugins` 後生效。
-
-## 快速開始
-
-### 使用 Slash Commands
-
-#### 程式碼審查
+建議搭配官方的 Java language server plugin，讓 Claude 改完程式碼就能看到編譯錯誤：
 
 ```text
-/code-review src/main/java/com/example/OrderService.java
+/plugin install jdtls-lsp@claude-plugins-official
 ```
 
-#### PR 審查
+需要先把 `jdtls` 裝在 `PATH` 上。
 
-```text
-# 審查 GitHub PR（需要 gh CLI）
-/review-pr 123
-/review-pr #456
+## 指令
 
-# 審查當前 branch 對 master 的差異
-/review-pr
+| 指令 | 做什麼 | 在哪裡執行 |
+|------|--------|-----------|
+| `/java-backend:code-review [path]` | 審查 Java 程式碼：先看資料存取和交易，再看 Clean Code 和過度設計 | `code-reviewer`（唯讀） |
+| `/java-backend:review-pr [pr \| branch] [base]` | 審查 GitHub PR（透過 `gh`）或 branch 差異 | `code-reviewer`（唯讀） |
+| `/java-backend:review-test [path]` | 審查測試是否涵蓋真實行為，以及 Spring 測試的陷阱 | `test-reviewer`（唯讀） |
+| `/java-backend:write-test [class]` | 依專案慣例寫測試，並執行到全部通過 | 你的對話 |
+| `/java-backend:optimize-query [query \| file]` | 從執行計畫找出真正的瓶頸，提出可量測的改善 | `data-architect`（唯讀） |
+| `/java-backend:design-solution [requirement]` | 設計功能，明確寫出一致性防護和可執行的計畫 | 你的對話 |
 
-# 審查 feature-branch 對 develop 的差異
-/review-pr feature-branch develop
-```
+也可以直接問（「幫我 review 這個 service」、「這個查詢為什麼慢？」），相關知識會在需要時自動載入。
 
-**注意**：審查 GitHub PR 需要安裝 `gh` CLI：
+## 運作方式
+
+每個審查指令都在一個唯讀的小幫手 agent 裡執行，開工前就已載入相關知識：交易與隔離等級、JPA/Hibernate、SQL 效能、測試，以及 Spring Boot 的版本差異。給建議之前，它會先讀你的 `pom.xml` 或 `build.gradle` 和 `application.yml`，讓建議符合你的 Spring Boot、Hibernate 和資料庫版本。
+
+核心觀念的圖解說明（中英雙語）：**https://xinqilin.github.io/claude-dev-toolkit-marketplace/**
+
+## Eval
+
+`plugins/java-backend/evals/` 有 6 個 case（MySQL 的 lost update、PostgreSQL 的 write skew、fetch join 分頁、IDENTITY 批次寫入、複合 index 順序、Spring Boot 4 測試）。每個 case 都會和「沒裝 plugin」的對照組比較：
 
 ```bash
-brew install gh
-gh auth login
+claude plugin eval plugins/java-backend --runs 3 --model sonnet --judge-model haiku --max-cost-usd 15 --no-publish
 ```
 
-#### Spring Boot 開發
+第一次完整跑完後，結果會公布在這裡。
 
-```text
-/design-solution
-[描述你的需求或問題]
+## 常見問題
 
-/optimize-query
-[貼上你的 SQL 或 JPA 程式碼]
-```
+**和 Claude Code 內建的 `/code-review` 有什麼不同？**
+內建的審查會找出 diff 裡的正確性 bug，適用任何語言。`java-backend` 補上它沒有的技術知識：各資料庫的隔離語意、Hibernate 各版本的行為、Spring Boot 3 和 4 的 API 差異。兩者可以一起用。
 
-> **提示**：mysql-optimization 知識已自動預載到 bill-java-developer agent 中。
+**它用什麼語言回答？**
+跟你一樣。plugin 的檔案是英文寫的，但每個指令都會用你提問的語言回答。
 
-#### 單元測試審查
+**它會改我的程式碼嗎？**
+審查和分析類的指令都是唯讀的。`/java-backend:write-test` 和 `/java-backend:design-solution` 在你的對話裡執行，每次修改你都看得到，也要經過你同意。
 
-```text
-/review-test src/test/java/com/example/OrderServiceTest.java
-```
+**從 1.x（`bill-*` plugin）升級？**
+請看 [CHANGELOG.md](CHANGELOG.md#upgrading-from-1x)。
 
-### 使用 Agents
+## 貢獻
 
-Agents 根據對話內容自動啟動：
-
-- **Java Developer Agent**: "我需要設計一個高併發訂單系統"
-- **Code Reviewer Agent**: "請審查這段程式碼的品質"
-- **Unit Test Reviewer Agent**: "請審查我的單元測試設計"
-
-### 自動觸發 Skills（bill-java-skills）
-
-知識 skills（clean-architecture、effective-java、mysql-optimization）已自動預載到 agents 中，無需手動觸發 — 詳見上方 [Agent 進階能力](#agent-進階能力)。
-
-## 目錄結構
-
-```plaintext
-project-claude-code-plugins/
-├── plugins/
-│   ├── bill-billing-unit-test-reviewer/
-│   │   ├── agents/
-│   │   │   └── bill-billing-unit-test-reviewer.md
-│   │   └── skills/
-│   │       └── review-test/
-│   │           └── SKILL.md
-│   ├── bill-code-reviewer/
-│   │   ├── agents/
-│   │   │   └── bill-code-reviewer.md
-│   │   └── skills/
-│   │       ├── code-review/
-│   │       │   └── SKILL.md
-│   │       └── review-pr/
-│   │           └── SKILL.md
-│   ├── bill-java-developer/
-│   │   ├── agents/
-│   │   │   └── bill-java-developer.md
-│   │   └── skills/
-│   │       ├── design-solution/SKILL.md
-│   │       └── optimize-query/SKILL.md
-│   └── bill-java-skills/
-│       └── skills/
-│           ├── clean-architecture/
-│           │   ├── SKILL.md
-│           │   └── references/
-│           ├── effective-java/
-│           │   ├── SKILL.md
-│           │   └── references/
-│           └── mysql-optimization/
-│               ├── SKILL.md
-│               └── references/
-├── install.sh
-├── uninstall.sh
-├── CLAUDE.md
-└── README.md
-```
-
-## GitHub Repository
-
-[https://github.com/xinqilin/claude-dev-toolkit-marketplace](https://github.com/xinqilin/claude-dev-toolkit-marketplace)
+附上官方來源的修正，是最有價值的貢獻。請看 [CONTRIBUTING.md](CONTRIBUTING.md)。
 
 ## 授權
 

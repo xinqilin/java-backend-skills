@@ -291,3 +291,8 @@ This ensures:
 - Infrastructure layer provides implementations
 - Configuration wires them together
 - No layer directly instantiates another layer's implementation
+
+## Sources
+
+- Robert C. Martin, *Clean Architecture* (2017), ch. 22 "The Clean Architecture" (the Dependency Rule)
+- ArchUnit User Guide: https://www.archunit.org/userguide/html/000_Index.html

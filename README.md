@@ -1,220 +1,89 @@
-# Bill Lin Dev Toolkit
+# java-backend for Claude Code
+
+[![Validate](https://github.com/xinqilin/claude-dev-toolkit-marketplace/actions/workflows/validate.yml/badge.svg)](https://github.com/xinqilin/claude-dev-toolkit-marketplace/actions/workflows/validate.yml)
+[![License: Apache-2.0](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](LICENSE)
 
 [繁體中文](./README.zh-TW.md) | English
 
-Enterprise-grade Java/Spring Boot development toolkit with 4 independent professional plugins.
+**A Claude Code plugin that reviews, tests, and designs Spring Boot services the way a senior backend engineer does: by knowing exactly how Spring Data JPA, Hibernate, MySQL, and PostgreSQL behave under concurrency and load.**
 
-## Quick Overview
+## Deep, not broad
 
-### 4 Independent Plugins
+The plugin covers one stack and goes deep on it: Spring Boot 4.1 (with 3.x differences noted), Spring Data JPA / Hibernate 7, MySQL 8.4, and PostgreSQL 18. Every behavioral claim in it was checked against vendor documentation or source code, and each reference file lists its sources.
 
-#### 1. bill-billing-unit-test-reviewer
+What it catches that a generic review usually misses:
 
-Focused on unit test review and best practices
+- **Lost updates in "correct-looking" code**: a `@Transactional` read-modify-write still loses money under MySQL's REPEATABLE READ. PostgreSQL's REPEATABLE READ raises 40001 instead. The plugin knows which database you run.
+- **Write skew**: two requests each pass a check and break an invariant together. It names the guard that fixes it: SERIALIZABLE with retry, a lock, or a constraint.
+- **Version-dependent JPA behavior**: a collection fetch join with `Pageable` pages in memory before Hibernate 7.4 and in the database from 7.4 on (MySQL, PostgreSQL). `IDENTITY` ids silently disable batch inserts.
+- **Index design**: equality columns first and the range or sort column last, not "most selective first". It also knows the MySQL type-conversion trap and online DDL metadata locks.
+- **Spring Boot 4 tests**: `@MockitoBean` instead of the removed `@MockBean`, moved test-slice packages, Testcontainers 2, and concurrency tests that actually prove something.
 
-- **Agent**: bill-billing-unit-test-reviewer
-- **Skill**: `/review-test` - Unit test code review
-- **Expertise**: TDD, test design, coverage analysis, avoiding over-engineering
+## Install
 
-#### 2. bill-code-reviewer
+In Claude Code:
 
-Code quality review and PR Review
-
-- **Agent**: bill-code-reviewer (preloads effective-java, clean-architecture skills)
-- **Skills**:
-  - `/code-review` - Code quality review (Clean Code + avoiding over-engineering)
-  - `/review-pr` - PR change review (branch diff or GitHub PR, runs in forked context)
-- **Expertise**: Clean Code, avoiding over-engineering, architecture evaluation, PR Review
-
-#### 3. bill-java-developer
-
-Spring Boot development and database optimization expert
-
-- **Agent**: bill-java-developer (preloads effective-java, clean-architecture, mysql-optimization skills)
-- **Skills**:
-  - `/design-solution` - Technical solution design and recommendations
-  - `/optimize-query` - SQL/JPA optimization (runs in forked context)
-- **Expertise**: Spring Boot, JPA, database performance, enterprise architecture
-
-#### 4. bill-java-skills
-
-Java development best practices knowledge base
-
-- **Skills** (preloaded by agents, not shown in `/` menu):
-  - `clean-architecture` - Clean Architecture design principles
-  - `effective-java` - Effective Java best practices
-  - `mysql-optimization` - MySQL performance optimization and JPA tuning
-
-> **Difference between Skills and Agents**:
->
-> - **Skills** (`/xxx`): Slash commands or auto-triggered knowledge base
-> - **Agents**: Automatically start based on conversation, provide interactive assistance
-
-### Agent Advanced Features
-
-- **Knowledge Preloading**: bill-java-developer and bill-code-reviewer agents automatically preload relevant knowledge skills (effective-java, clean-architecture, mysql-optimization) — no manual invocation needed
-- **Project Memory**: All agents support project-level memory, remembering project-specific patterns and conventions across sessions
-- **Safety Restrictions**: Reviewer agents have read-only permissions and will not accidentally modify code
-- **Gotchas Protection**: Every skill includes a curated Gotchas section — common pitfalls that Claude tends to fall into, ensuring higher quality output
-
-## Installation
-
-### Option 1: Via /plugin marketplace (recommended, no clone needed)
-
-In Claude Code, run:
-```
+```text
 /plugin marketplace add xinqilin/claude-dev-toolkit-marketplace
+/plugin install java-backend@xinqilin
 ```
 
-### Option 2: Via install.sh (after cloning, uses symlinks — auto-updates on git pull)
+Updates arrive when the plugin's `version` changes. Run `claude plugin update java-backend@xinqilin`, or turn on auto-update under `/plugin` → **Marketplaces** → `xinqilin`.
 
-```bash
-git clone https://github.com/xinqilin/claude-dev-toolkit-marketplace
-cd claude-dev-toolkit-marketplace
-./install.sh --all
-```
-
-### Install Specific Plugins
-
-```bash
-# List available plugins
-./install.sh --list
-
-# Install only what you need
-./install.sh --plugin bill-code-reviewer
-./install.sh --plugin bill-java-developer
-./install.sh --plugin bill-java-skills
-./install.sh --plugin bill-billing-unit-test-reviewer
-```
-
-### Uninstall
-
-```bash
-./uninstall.sh
-```
-
-### Update
-
-**install.sh users**: `git pull` — symlinks auto-update, no reinstall needed.
-
-```bash
-git pull
-```
-
-**marketplace users**: A new release reaches you only when the plugin's `version` changes, and auto-update is off by default for this marketplace. Update on demand:
-
-```bash
-claude plugin update <plugin-name>@bill-lin-dev-toolkit
-```
-
-Or turn on auto-update once: `/plugin` → **Marketplaces** → `bill-lin-dev-toolkit` → **Enable auto-update**. Updates apply in the next session or after `/reload-plugins`.
-
-## Quick Start
-
-### Using Slash Commands
-
-#### Code Review
+Recommended companion: the official Java language server plugin, so Claude sees compile errors right after editing:
 
 ```text
-/code-review src/main/java/com/example/OrderService.java
+/plugin install jdtls-lsp@claude-plugins-official
 ```
 
-#### PR Review
+It needs `jdtls` on your `PATH`.
 
-```text
-# Review GitHub PR (requires gh CLI)
-/review-pr 123
-/review-pr #456
+## Commands
 
-# Review current branch diff against master
-/review-pr
+| Command | What it does | Runs in |
+|---------|--------------|---------|
+| `/java-backend:code-review [path]` | Reviews Java code: data access and transactions first, then Clean Code and over-design | `code-reviewer` (read-only) |
+| `/java-backend:review-pr [pr \| branch] [base]` | Reviews a GitHub PR (via `gh`) or a branch diff | `code-reviewer` (read-only) |
+| `/java-backend:review-test [path]` | Reviews tests for real-behavior coverage and Spring test pitfalls | `test-reviewer` (read-only) |
+| `/java-backend:write-test [class]` | Writes tests following your project's conventions, then runs them until green | your conversation |
+| `/java-backend:optimize-query [query \| file]` | Finds the real bottleneck from the execution plan and proposes a measured fix | `data-architect` (read-only) |
+| `/java-backend:design-solution [requirement]` | Designs a feature with explicit consistency guards and a buildable plan | your conversation |
 
-# Review feature-branch against develop
-/review-pr feature-branch develop
-```
+You can also just ask ("review this service", "why is this query slow?"); the knowledge loads when it's relevant.
 
-**Note**: GitHub PR review requires `gh` CLI:
+## How it works
+
+Each review command runs in a read-only helper agent that starts with the relevant knowledge already loaded: transactions and isolation, JPA/Hibernate, SQL performance, testing, and Spring Boot version differences. Before giving advice, it reads your `pom.xml` or `build.gradle` and `application.yml`, so the advice matches your Spring Boot, Hibernate, and database versions.
+
+Picture explainers of the core ideas, in English and Traditional Chinese: **https://xinqilin.github.io/claude-dev-toolkit-marketplace/**
+
+## Evals
+
+`plugins/java-backend/evals/` contains six cases (lost update on MySQL, write skew on PostgreSQL, fetch join pagination, IDENTITY batching, composite index order, Spring Boot 4 tests). Each runs with the plugin and against a no-plugin baseline:
 
 ```bash
-brew install gh
-gh auth login
+claude plugin eval plugins/java-backend --runs 3 --model sonnet --judge-model haiku --max-cost-usd 15 --no-publish
 ```
 
-#### Spring Boot Development
+Results will be published here after the first full run.
 
-```text
-/design-solution
-[Describe your requirements or problem]
+## FAQ
 
-/optimize-query
-[Paste your SQL or JPA code]
-```
+**How is this different from Claude Code's built-in `/code-review`?**
+The built-in review looks for correctness bugs in a diff, in any language. `java-backend` adds stack knowledge it doesn't have: per-database isolation semantics, Hibernate version behaviors, and Spring Boot 3 vs 4 APIs. Use both.
 
-> **Tip**: mysql-optimization knowledge is automatically preloaded into the bill-java-developer agent.
+**Which language does it answer in?**
+Yours. The plugin's files are in English, and every command answers in the language you write in.
 
-#### Unit Test Review
+**Does it change my code?**
+The review and analysis commands are read-only. `/java-backend:write-test` and `/java-backend:design-solution` run in your conversation, so you see and approve each edit.
 
-```text
-/review-test src/test/java/com/example/OrderServiceTest.java
-```
+**Upgrading from 1.x (`bill-*` plugins)?**
+See [CHANGELOG.md](CHANGELOG.md#upgrading-from-1x).
 
-### Using Agents
+## Contributing
 
-Agents automatically activate based on conversation context:
-
-- **Java Developer Agent**: "I need to design a high-concurrency order system"
-- **Code Reviewer Agent**: "Please review this code's quality"
-- **Unit Test Reviewer Agent**: "Please review my unit test design"
-
-### Auto-Triggered Skills (bill-java-skills)
-
-Knowledge skills (clean-architecture, effective-java, mysql-optimization) are preloaded into agents automatically — see [Agent Advanced Features](#agent-advanced-features) above.
-
-## Directory Structure
-
-```plaintext
-project-claude-code-plugins/
-├── plugins/
-│   ├── bill-billing-unit-test-reviewer/
-│   │   ├── agents/
-│   │   │   └── bill-billing-unit-test-reviewer.md
-│   │   └── skills/
-│   │       └── review-test/
-│   │           └── SKILL.md
-│   ├── bill-code-reviewer/
-│   │   ├── agents/
-│   │   │   └── bill-code-reviewer.md
-│   │   └── skills/
-│   │       ├── code-review/
-│   │       │   └── SKILL.md
-│   │       └── review-pr/
-│   │           └── SKILL.md
-│   ├── bill-java-developer/
-│   │   ├── agents/
-│   │   │   └── bill-java-developer.md
-│   │   └── skills/
-│   │       ├── design-solution/SKILL.md
-│   │       └── optimize-query/SKILL.md
-│   └── bill-java-skills/
-│       └── skills/
-│           ├── clean-architecture/
-│           │   ├── SKILL.md
-│           │   └── references/
-│           ├── effective-java/
-│           │   ├── SKILL.md
-│           │   └── references/
-│           └── mysql-optimization/
-│               ├── SKILL.md
-│               └── references/
-├── install.sh
-├── uninstall.sh
-├── CLAUDE.md
-└── README.md
-```
-
-## GitHub Repository
-
-[https://github.com/xinqilin/claude-dev-toolkit-marketplace](https://github.com/xinqilin/claude-dev-toolkit-marketplace)
+Corrections with an official source are the most valuable contribution. See [CONTRIBUTING.md](CONTRIBUTING.md).
 
 ## License
 

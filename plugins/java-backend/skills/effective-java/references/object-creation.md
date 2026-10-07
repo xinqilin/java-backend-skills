@@ -443,3 +443,8 @@ try (InputStream in = new FileInputStream(src);
 // Even better with Files utility
 Files.copy(src.toPath(), dst.toPath(), StandardCopyOption.REPLACE_EXISTING);
 ```
+
+## Sources
+
+- Joshua Bloch, *Effective Java* (3rd ed.), ch. 2 "Creating and Destroying Objects" (items 1-9)
+- Project Lombok, `@Builder`: https://projectlombok.org/features/Builder

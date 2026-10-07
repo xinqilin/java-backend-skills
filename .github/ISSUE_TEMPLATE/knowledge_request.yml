@@ -1,0 +1,30 @@
+name: Knowledge request
+description: A Spring Boot, JPA/Hibernate, MySQL, or PostgreSQL pitfall the plugin should know.
+labels: [knowledge]
+body:
+  - type: textarea
+    id: pitfall
+    attributes:
+      label: The pitfall
+      description: What goes wrong, in which situation, and what Claude currently says about it.
+    validations:
+      required: true
+  - type: textarea
+    id: sources
+    attributes:
+      label: Official sources
+      description: Every claim in the plugin is backed by vendor documentation or source code. Link yours.
+    validations:
+      required: true
+  - type: dropdown
+    id: area
+    attributes:
+      label: Area
+      options:
+        - Transactions and consistency
+        - JPA / Hibernate
+        - SQL performance and indexes
+        - Testing
+        - Spring Boot version differences
+    validations:
+      required: true

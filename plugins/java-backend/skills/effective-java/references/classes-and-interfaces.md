@@ -411,3 +411,7 @@ public class Order {
 // OrderItem.java
 public class OrderItem { }
 ```
+
+## Sources
+
+- Joshua Bloch, *Effective Java* (3rd ed.), ch. 4 "Classes and Interfaces" (items 15-25)

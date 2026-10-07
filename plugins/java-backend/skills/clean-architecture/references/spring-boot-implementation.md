@@ -485,3 +485,8 @@ public class ApplicationConfig {
     }
 }
 ```
+
+## Sources
+
+- Robert C. Martin, *Clean Architecture* (2017), ch. 22 "The Clean Architecture"
+- Spring Boot reference, Structuring Your Code: https://docs.spring.io/spring-boot/reference/using/structuring-your-code.html

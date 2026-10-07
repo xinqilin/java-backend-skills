@@ -323,3 +323,8 @@ List<Result> results = largeList.parallelStream()
 3. **Avoid shared mutable state**
 4. **Keep operations stateless**
 5. **Be careful with ordering** - Use `forEachOrdered` if needed
+
+## Sources
+
+- Joshua Bloch, *Effective Java* (3rd ed.), ch. 7 "Lambdas and Streams" (items 42-48)
+- Java SE API, `java.util.stream`: https://docs.oracle.com/en/java/javase/25/docs/api/java.base/java/util/stream/package-summary.html

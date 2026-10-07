@@ -17,6 +17,7 @@ plugins/java-backend/
   skills/<name>/references/*.md    # Detail loaded on demand; each file ends with a Sources list
   evals/                           # claude plugin eval cases
 docs/                              # GitHub Pages: bilingual ELI5 explainers; not shipped with the plugin
+.github/                           # CI (validate + content checks), issue and PR templates
 ```
 
 How the pieces connect (verified in a live session on Claude Code 2.1.292):
@@ -33,6 +34,7 @@ How the pieces connect (verified in a live session on Claude Code 2.1.292):
 ```bash
 claude plugin validate --strict .                     # marketplace.json, including the renames chain
 claude plugin validate --strict plugins/java-backend  # plugin.json and agent frontmatter
+python3 .github/scripts/check_content.py              # content rules below, plus docs/ links; CI runs all three
 claude --plugin-dir ./plugins/java-backend            # load the plugin from source for one session
 claude --plugin-dir ./plugins/java-backend plugin details java-backend   # inventory and always-on token cost
 claude plugin marketplace add ./                      # local marketplace; loads source files in place each session
