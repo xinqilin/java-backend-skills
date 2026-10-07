@@ -6,6 +6,7 @@ disallowedTools: Edit, Write, NotebookEdit
 maxTurns: 30
 color: cyan
 skills:
+  - java-backend:java-testing
   - java-backend:spring-boot-baseline
 ---
 

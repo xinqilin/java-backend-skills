@@ -9,7 +9,7 @@ agent: java-backend:test-reviewer
 
 # Review Unit Tests
 
-Review `$ARGUMENTS` (or the test files changed in the working tree when empty) to senior-engineer standards.
+Review `$ARGUMENTS` (or the test files changed in the working tree when empty) to senior-engineer standards, applying the preloaded `java-backend:java-testing` knowledge (test types, Spring Boot 3 vs 4 APIs, Testcontainers, concurrency tests).
 
 ## Core principle
 

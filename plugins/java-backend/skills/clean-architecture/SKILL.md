@@ -144,4 +144,4 @@ src/main/java/com/example/order/
 
 - **references/layer-dependencies.md** — Dependency rules and violation examples
 - **references/spring-boot-implementation.md** — Complete project templates for all layers
-- **references/testing-strategy.md** — Testing each layer in isolation
+- Testing each layer: see `java-backend:java-testing` (references/spring-test-slices.md)
