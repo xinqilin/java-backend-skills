@@ -218,4 +218,4 @@ project-claude-code-plugins/
 
 ## 授權
 
-MIT License - 詳見 [LICENSE](LICENSE) 檔案
+Copyright 2025-2026 Bill Lin。以 [Apache License 2.0](LICENSE) 授權。

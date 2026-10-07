@@ -7,7 +7,7 @@
   },
   "homepage": "https://github.com/xinqilin/claude-dev-toolkit-marketplace",
   "repository": "https://github.com/xinqilin/claude-dev-toolkit-marketplace",
-  "license": "MIT",
+  "license": "Apache-2.0",
   "keywords": ["java", "spring-boot", "jpa", "database", "performance", "enterprise", "mysql", "optimization", "hibernate"],
   "skills": "./skills/"
 }

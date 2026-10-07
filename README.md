@@ -218,4 +218,4 @@ project-claude-code-plugins/
 
 ## License
 
-MIT License - See [LICENSE](LICENSE) file for details
+Copyright 2025-2026 Bill Lin. Licensed under the [Apache License 2.0](LICENSE).
