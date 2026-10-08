@@ -1,492 +1,427 @@
-# Spring Boot Clean Architecture Implementation
+# Spring Boot Templates: Pragmatic Default and Strict Variant
 
-## Complete Project Template
+Both templates compile on Spring Boot 4.1 (Hibernate 7.4, Java 21), and the ArchUnit rules in `layer-dependencies.md` pass on them. Imports are left out below.
+
+## Pragmatic template
+
+### Package layout
 
 ```
-src/
-├── main/
-│   ├── java/com/example/order/
-│   │   ├── OrderApplication.java
-│   │   ├── domain/
-│   │   │   ├── model/
-│   │   │   │   ├── Order.java
-│   │   │   │   ├── OrderId.java
-│   │   │   │   ├── OrderItem.java
-│   │   │   │   ├── OrderStatus.java
-│   │   │   │   ├── Money.java
-│   │   │   │   └── Customer.java
-│   │   │   ├── service/
-│   │   │   │   └── OrderDomainService.java
-│   │   │   ├── event/
-│   │   │   │   └── OrderCreatedEvent.java
-│   │   │   └── exception/
-│   │   │       ├── OrderNotFoundException.java
-│   │   │       └── InvalidOrderStateException.java
-│   │   ├── application/
-│   │   │   ├── port/
-│   │   │   │   ├── in/
-│   │   │   │   │   ├── CreateOrderUseCase.java
-│   │   │   │   │   ├── GetOrderUseCase.java
-│   │   │   │   │   └── CancelOrderUseCase.java
-│   │   │   │   └── out/
-│   │   │   │       ├── OrderRepository.java
-│   │   │   │       ├── CustomerRepository.java
-│   │   │   │       └── EventPublisher.java
-│   │   │   ├── service/
-│   │   │   │   ├── CreateOrderService.java
-│   │   │   │   ├── GetOrderService.java
-│   │   │   │   └── CancelOrderService.java
-│   │   │   └── dto/
-│   │   │       ├── CreateOrderCommand.java
-│   │   │       ├── OrderResult.java
-│   │   │       └── GetOrderQuery.java
-│   │   ├── infrastructure/
-│   │   │   ├── persistence/
-│   │   │   │   ├── entity/
-│   │   │   │   │   ├── OrderEntity.java
-│   │   │   │   │   └── OrderItemEntity.java
-│   │   │   │   ├── repository/
-│   │   │   │   │   ├── OrderJpaRepository.java
-│   │   │   │   │   └── JpaOrderRepositoryAdapter.java
-│   │   │   │   └── mapper/
-│   │   │   │       └── OrderPersistenceMapper.java
-│   │   │   ├── messaging/
-│   │   │   │   └── SpringEventPublisher.java
-│   │   │   └── config/
-│   │   │       ├── PersistenceConfig.java
-│   │   │       └── ApplicationConfig.java
-│   │   └── presentation/
-│   │       ├── controller/
-│   │       │   └── OrderController.java
-│   │       ├── request/
-│   │       │   └── CreateOrderRequest.java
-│   │       ├── response/
-│   │       │   └── OrderResponse.java
-│   │       └── exception/
-│   │           └── GlobalExceptionHandler.java
-│   └── resources/
-│       └── application.yml
-└── test/
-    └── java/com/example/order/
-        ├── domain/
-        │   └── model/OrderTest.java
-        ├── application/
-        │   └── service/CreateOrderServiceTest.java
-        ├── infrastructure/
-        │   └── persistence/JpaOrderRepositoryAdapterTest.java
-        └── presentation/
-            └── controller/OrderControllerTest.java
+com.example.shop
+├── order
+│   ├── domain          Order, OrderLine, Money, NewLine, OrderStatus, OrderCancelled,
+│   │                   OrderRepository, OrderNotFoundException, OrderStateException
+│   ├── application     OrderService, PlaceOrderCommand, OrderSummary, OrderCancelledListener,
+│   │                   CheckoutService, PaymentSteps, PaymentGateway (port), PaymentRequest, PaymentResult
+│   └── web             OrderController, PlaceOrderRequest, OrderExceptionHandler
+└── infrastructure      HttpPaymentGateway
 ```
 
----
+Package by feature first (`order`), then by layer. A feature's classes stay together, and the layers stay visible to ArchUnit.
 
-## Layer Code Templates
-
-### Domain Layer
+### Domain
 
 ```java
-// domain/model/Order.java
-public class Order {
-    private final OrderId id;
-    private final CustomerId customerId;
-    private final List<OrderItem> items;
-    private Money totalAmount;
+@Entity
+@Table(name = "orders")
+public class Order extends AbstractAggregateRoot<Order> {
+
+    @Id
+    private UUID id;
+
+    @Version
+    private Long version; // null until persisted, so save() persists without a SELECT
+
+    @Column(nullable = false)
+    private UUID customerId;
+
+    @Enumerated(EnumType.STRING)
+    @Column(nullable = false, length = 20)
     private OrderStatus status;
-    private final LocalDateTime createdAt;
 
-    private Order(OrderId id, CustomerId customerId, List<OrderItem> items) {
-        this.id = id;
-        this.customerId = customerId;
-        this.items = new ArrayList<>(items);
-        this.totalAmount = calculateTotal();
-        this.status = OrderStatus.PENDING;
-        this.createdAt = LocalDateTime.now();
+    @Embedded
+    private Money total;
+
+    private UUID paymentKey; // idempotency key sent to the payment provider
+
+    @OneToMany(mappedBy = "order", cascade = CascadeType.ALL, orphanRemoval = true)
+    private List<OrderLine> lines = new ArrayList<>();
+
+    protected Order() { // for JPA
     }
 
-    public static Order create(CustomerId customerId, List<OrderItem> items) {
-        if (items.isEmpty()) {
-            throw new IllegalArgumentException("Order must have at least one item");
+    public static Order place(UUID customerId, List<NewLine> newLines) {
+        if (newLines.isEmpty()) {
+            throw new IllegalArgumentException("an order needs at least one line");
         }
-        return new Order(OrderId.generate(), customerId, items);
+        Order order = new Order();
+        order.id = UUID.randomUUID();
+        order.customerId = customerId;
+        order.status = OrderStatus.PENDING;
+        newLines.forEach(line -> order.lines.add(new OrderLine(order, line)));
+        order.total = order.lines.stream().map(OrderLine::subtotal).reduce(Money::add).orElseThrow();
+        return order;
     }
 
-    public void confirm() {
-        if (status != OrderStatus.PENDING) {
-            throw new InvalidOrderStateException("Cannot confirm non-pending order");
-        }
-        this.status = OrderStatus.CONFIRMED;
+    public UUID startPayment() {
+        requireStatus(OrderStatus.PENDING, "pay");
+        status = OrderStatus.PAYMENT_PENDING;
+        paymentKey = UUID.randomUUID();
+        return paymentKey;
+    }
+
+    public void completePayment(boolean succeeded) {
+        requireStatus(OrderStatus.PAYMENT_PENDING, "complete payment for");
+        status = succeeded ? OrderStatus.PAID : OrderStatus.PAYMENT_FAILED;
     }
 
     public void cancel() {
-        if (status == OrderStatus.SHIPPED) {
-            throw new InvalidOrderStateException("Cannot cancel shipped order");
-        }
-        this.status = OrderStatus.CANCELLED;
+        requireStatus(OrderStatus.PENDING, "cancel");
+        status = OrderStatus.CANCELLED;
+        registerEvent(new OrderCancelled(id)); // published by the next repository save()
     }
 
-    private Money calculateTotal() {
-        return items.stream()
-            .map(OrderItem::subtotal)
-            .reduce(Money.ZERO, Money::add);
-    }
-
-    // Getters only - no setters
-    public OrderId getId() { return id; }
-    public OrderStatus getStatus() { return status; }
-    public Money getTotalAmount() { return totalAmount; }
-    public List<OrderItem> getItems() { return Collections.unmodifiableList(items); }
-}
-
-// domain/model/OrderId.java
-public record OrderId(String value) {
-    public OrderId {
-        Objects.requireNonNull(value, "OrderId cannot be null");
-    }
-
-    public static OrderId generate() {
-        return new OrderId(UUID.randomUUID().toString());
-    }
-
-    public static OrderId of(String value) {
-        return new OrderId(value);
-    }
-}
-
-// domain/model/Money.java
-public record Money(BigDecimal amount, Currency currency) {
-    public static final Money ZERO = new Money(BigDecimal.ZERO, Currency.getInstance("TWD"));
-
-    public Money {
-        Objects.requireNonNull(amount);
-        Objects.requireNonNull(currency);
-        if (amount.compareTo(BigDecimal.ZERO) < 0) {
-            throw new IllegalArgumentException("Amount cannot be negative");
+    private void requireStatus(OrderStatus expected, String action) {
+        if (status != expected) {
+            throw new OrderStateException(id, status, action);
         }
     }
 
-    public Money add(Money other) {
-        if (!this.currency.equals(other.currency)) {
-            throw new IllegalArgumentException("Cannot add different currencies");
-        }
-        return new Money(this.amount.add(other.amount), this.currency);
+    public List<OrderLine> getLines() {
+        return Collections.unmodifiableList(lines);
     }
 
-    public Money multiply(int quantity) {
-        return new Money(this.amount.multiply(BigDecimal.valueOf(quantity)), this.currency);
-    }
-}
-```
-
-### Application Layer
-
-```java
-// application/port/in/CreateOrderUseCase.java
-public interface CreateOrderUseCase {
-    OrderResult execute(CreateOrderCommand command);
+    // getId(), getStatus(), getTotal()
 }
 
-// application/port/out/OrderRepository.java
-public interface OrderRepository {
-    void save(Order order);
-    Optional<Order> findById(OrderId id);
-    List<Order> findByCustomerId(CustomerId customerId);
-}
-
-// application/dto/CreateOrderCommand.java
-public record CreateOrderCommand(
-    CustomerId customerId,
-    List<OrderItemCommand> items
-) {
-    public record OrderItemCommand(ProductId productId, int quantity, Money price) {}
-}
-
-// application/service/CreateOrderService.java
-@Service
-@Transactional
-public class CreateOrderService implements CreateOrderUseCase {
-    private final OrderRepository orderRepository;
-    private final CustomerRepository customerRepository;
-    private final EventPublisher eventPublisher;
-
-    public CreateOrderService(
-            OrderRepository orderRepository,
-            CustomerRepository customerRepository,
-            EventPublisher eventPublisher) {
-        this.orderRepository = orderRepository;
-        this.customerRepository = customerRepository;
-        this.eventPublisher = eventPublisher;
-    }
-
-    @Override
-    public OrderResult execute(CreateOrderCommand command) {
-        // Validate customer exists
-        customerRepository.findById(command.customerId())
-            .orElseThrow(() -> new CustomerNotFoundException(command.customerId()));
-
-        // Create domain object
-        List<OrderItem> items = command.items().stream()
-            .map(i -> new OrderItem(i.productId(), i.quantity(), i.price()))
-            .toList();
-
-        Order order = Order.create(command.customerId(), items);
-
-        // Persist
-        orderRepository.save(order);
-
-        // Publish event
-        eventPublisher.publish(new OrderCreatedEvent(order.getId(), order.getTotalAmount()));
-
-        return new OrderResult(order.getId(), order.getStatus(), order.getTotalAmount());
-    }
-}
-```
-
-### Infrastructure Layer
-
-```java
-// infrastructure/persistence/entity/OrderEntity.java
 @Entity
-@Table(name = "orders")
-public class OrderEntity {
+@Table(name = "order_lines")
+public class OrderLine {
+
     @Id
-    private String id;
+    private UUID id;
 
-    @Column(name = "customer_id", nullable = false)
-    private String customerId;
+    @ManyToOne(fetch = FetchType.LAZY, optional = false)
+    private Order order;
 
-    @Column(name = "total_amount", nullable = false)
-    private BigDecimal totalAmount;
+    @Column(nullable = false, length = 40)
+    private String sku;
 
-    @Column(name = "currency", nullable = false)
-    private String currency;
+    private int quantity;
 
-    @Enumerated(EnumType.STRING)
-    @Column(nullable = false)
-    private OrderStatus status;
+    @Embedded
+    private Money unitPrice;
 
-    @Column(name = "created_at", nullable = false)
-    private LocalDateTime createdAt;
+    protected OrderLine() {
+    }
 
-    @OneToMany(mappedBy = "order", cascade = CascadeType.ALL, orphanRemoval = true)
-    private List<OrderItemEntity> items = new ArrayList<>();
+    OrderLine(Order order, NewLine line) {
+        if (line.quantity() <= 0) {
+            throw new IllegalArgumentException("quantity must be positive: " + line.quantity());
+        }
+        this.id = UUID.randomUUID();
+        this.order = order;
+        this.sku = line.sku();
+        this.quantity = line.quantity();
+        this.unitPrice = line.unitPrice();
+    }
 
-    // JPA requires default constructor
-    protected OrderEntity() {}
+    Money subtotal() {
+        return unitPrice.times(quantity);
+    }
 
-    // Getters and setters for JPA
+    // getSku(), getQuantity(), getUnitPrice()
 }
 
-// infrastructure/persistence/repository/JpaOrderRepositoryAdapter.java
-@Repository
-public class JpaOrderRepositoryAdapter implements OrderRepository {
-    private final OrderJpaRepository jpaRepository;
-    private final OrderPersistenceMapper mapper;
+public interface OrderRepository extends Repository<Order, UUID> {
 
-    public JpaOrderRepositoryAdapter(
-            OrderJpaRepository jpaRepository,
-            OrderPersistenceMapper mapper) {
-        this.jpaRepository = jpaRepository;
-        this.mapper = mapper;
+    Optional<Order> findById(UUID id);
+
+    <S extends Order> S save(S order);
+}
+```
+
+- `Money` is the `@Embeddable` record from `java-backend:effective-java`. It fixes the `BigDecimal` scale per currency, so equal amounts are `equals`.
+- `@Version Long version` serves twice. While it is `null`, Spring Data's `save()` knows the entity is new, even with an assigned UUID, and persists it without a `SELECT`. A concurrent update fails at commit with `ObjectOptimisticLockingFailureException`, which the web layer maps to 409.
+- `protected Order()` exists only for JPA. `place(...)` is the only way to create an order, and the state changes are methods that check the current status.
+- `OrderRepository` extends `Repository` and declares only `findById` and `save`. These signatures match `CrudRepository`'s, so Spring Data routes them to its implementation. Use cases can't call `deleteAll` or an unpaged `findAll`.
+- `registerEvent(...)` queues `OrderCancelled`. Only a repository `save` or `delete` publishes it.
+
+### Application
+
+```java
+@Service
+public class OrderService {
+
+    private final OrderRepository orders;
+
+    public OrderService(OrderRepository orders) {
+        this.orders = orders;
     }
 
-    @Override
-    public void save(Order order) {
-        OrderEntity entity = mapper.toEntity(order);
-        jpaRepository.save(entity);
+    @Transactional
+    public UUID place(PlaceOrderCommand command) {
+        Order order = Order.place(command.customerId(), command.lines());
+        return orders.save(order).getId();
     }
 
-    @Override
-    public Optional<Order> findById(OrderId id) {
-        return jpaRepository.findById(id.value())
-            .map(mapper::toDomain);
+    @Transactional
+    public void cancel(UUID orderId) {
+        Order order = load(orderId);
+        order.cancel();
+        orders.save(order); // dirty checking writes the change anyway; save() publishes OrderCancelled
     }
 
-    @Override
-    public List<Order> findByCustomerId(CustomerId customerId) {
-        return jpaRepository.findByCustomerId(customerId.value())
-            .stream()
-            .map(mapper::toDomain)
-            .toList();
+    @Transactional(readOnly = true)
+    public OrderSummary get(UUID orderId) {
+        return OrderSummary.from(load(orderId)); // lines are read inside the transaction
+    }
+
+    private Order load(UUID orderId) {
+        return orders.findById(orderId).orElseThrow(() -> new OrderNotFoundException(orderId));
     }
 }
 
-// infrastructure/persistence/mapper/OrderPersistenceMapper.java
+public record PlaceOrderCommand(UUID customerId, List<NewLine> lines) {
+}
+
+public record OrderSummary(UUID id, OrderStatus status, Money total, List<String> skus) {
+
+    static OrderSummary from(Order order) {
+        return new OrderSummary(order.getId(), order.getStatus(), order.getTotal(),
+                order.getLines().stream().map(OrderLine::getSku).toList());
+    }
+}
+
 @Component
-public class OrderPersistenceMapper {
+class OrderCancelledListener {
 
-    public OrderEntity toEntity(Order order) {
-        OrderEntity entity = new OrderEntity();
-        entity.setId(order.getId().value());
-        entity.setCustomerId(order.getCustomerId().value());
-        entity.setTotalAmount(order.getTotalAmount().amount());
-        entity.setCurrency(order.getTotalAmount().currency().getCurrencyCode());
-        entity.setStatus(order.getStatus());
-        entity.setCreatedAt(order.getCreatedAt());
-
-        List<OrderItemEntity> itemEntities = order.getItems().stream()
-            .map(item -> toItemEntity(item, entity))
-            .toList();
-        entity.setItems(itemEntities);
-
-        return entity;
-    }
-
-    public Order toDomain(OrderEntity entity) {
-        List<OrderItem> items = entity.getItems().stream()
-            .map(this::toItemDomain)
-            .toList();
-
-        return Order.reconstitute(
-            OrderId.of(entity.getId()),
-            CustomerId.of(entity.getCustomerId()),
-            items,
-            new Money(entity.getTotalAmount(), Currency.getInstance(entity.getCurrency())),
-            entity.getStatus(),
-            entity.getCreatedAt()
-        );
+    @TransactionalEventListener // AFTER_COMMIT by default: runs only if the cancellation committed
+    void on(OrderCancelled event) {
+        log.info("order {} cancelled", event.orderId()); // in-process only; other systems need an outbox
     }
 }
 ```
 
-### Presentation Layer
+- Each use case method declares its own transaction. `readOnly = true` on reads switches Hibernate to manual flush and skips dirty-checking snapshots (`java-backend:jpa-hibernate`).
+- `get()` maps the aggregate inside the transaction, so it works with `spring.jpa.open-in-view=false`.
+- The checkout flow (`CheckoutService`, `PaymentSteps`, and the `PaymentGateway` port) is in `layer-dependencies.md`, section 3.
+
+### Web
 
 ```java
-// presentation/controller/OrderController.java
 @RestController
-@RequestMapping("/api/v1/orders")
-public class OrderController {
-    private final CreateOrderUseCase createOrderUseCase;
-    private final GetOrderUseCase getOrderUseCase;
-    private final CancelOrderUseCase cancelOrderUseCase;
+@RequestMapping("/orders")
+class OrderController {
 
-    public OrderController(
-            CreateOrderUseCase createOrderUseCase,
-            GetOrderUseCase getOrderUseCase,
-            CancelOrderUseCase cancelOrderUseCase) {
-        this.createOrderUseCase = createOrderUseCase;
-        this.getOrderUseCase = getOrderUseCase;
-        this.cancelOrderUseCase = cancelOrderUseCase;
+    private final OrderService orders;
+    private final CheckoutService checkout;
+
+    OrderController(OrderService orders, CheckoutService checkout) {
+        this.orders = orders;
+        this.checkout = checkout;
     }
 
     @PostMapping
-    public ResponseEntity<OrderResponse> createOrder(
-            @Valid @RequestBody CreateOrderRequest request) {
-        CreateOrderCommand command = request.toCommand();
-        OrderResult result = createOrderUseCase.execute(command);
-        return ResponseEntity
-            .created(URI.create("/api/v1/orders/" + result.orderId().value()))
-            .body(OrderResponse.from(result));
+    ResponseEntity<Void> place(@Valid @RequestBody PlaceOrderRequest request) {
+        UUID id = orders.place(request.toCommand());
+        return ResponseEntity.created(URI.create("/orders/" + id)).build();
     }
 
-    @GetMapping("/{orderId}")
-    public ResponseEntity<OrderResponse> getOrder(@PathVariable String orderId) {
-        OrderResult result = getOrderUseCase.execute(new GetOrderQuery(OrderId.of(orderId)));
-        return ResponseEntity.ok(OrderResponse.from(result));
+    @GetMapping("/{id}")
+    OrderSummary get(@PathVariable UUID id) {
+        return orders.get(id);
     }
 
-    @DeleteMapping("/{orderId}")
-    public ResponseEntity<Void> cancelOrder(@PathVariable String orderId) {
-        cancelOrderUseCase.execute(OrderId.of(orderId));
+    @PostMapping("/{id}/cancel")
+    ResponseEntity<Void> cancel(@PathVariable UUID id) {
+        orders.cancel(id);
+        return ResponseEntity.noContent().build();
+    }
+
+    @PostMapping("/{id}/checkout")
+    ResponseEntity<Void> checkout(@PathVariable UUID id) {
+        checkout.checkout(id);
         return ResponseEntity.noContent().build();
     }
 }
 
-// presentation/request/CreateOrderRequest.java
-public record CreateOrderRequest(
-    @NotBlank String customerId,
-    @NotEmpty List<OrderItemRequest> items
-) {
-    public record OrderItemRequest(
-        @NotBlank String productId,
-        @Min(1) int quantity,
-        @NotNull BigDecimal price
-    ) {}
+record PlaceOrderRequest(
+        @NotNull UUID customerId,
+        @NotBlank @Size(min = 3, max = 3) String currency,
+        @NotEmpty List<@Valid Line> lines) {
 
-    public CreateOrderCommand toCommand() {
-        List<CreateOrderCommand.OrderItemCommand> itemCommands = items.stream()
-            .map(i -> new CreateOrderCommand.OrderItemCommand(
-                ProductId.of(i.productId()),
-                i.quantity(),
-                new Money(i.price(), Currency.getInstance("TWD"))
-            ))
-            .toList();
+    record Line(@NotBlank String sku, @Positive int quantity, @NotNull @Positive BigDecimal unitPrice) {
+    }
 
-        return new CreateOrderCommand(CustomerId.of(customerId), itemCommands);
+    PlaceOrderCommand toCommand() {
+        Currency orderCurrency = Currency.getInstance(currency);
+        return new PlaceOrderCommand(customerId, lines.stream()
+                .map(line -> new NewLine(line.sku(), line.quantity(), new Money(line.unitPrice(), orderCurrency)))
+                .toList());
     }
 }
 
-// presentation/response/OrderResponse.java
-public record OrderResponse(
-    String orderId,
-    String status,
-    BigDecimal totalAmount,
-    String currency
-) {
-    public static OrderResponse from(OrderResult result) {
-        return new OrderResponse(
-            result.orderId().value(),
-            result.status().name(),
-            result.totalAmount().amount(),
-            result.totalAmount().currency().getCurrencyCode()
-        );
-    }
-}
-
-// presentation/exception/GlobalExceptionHandler.java
 @RestControllerAdvice
-public class GlobalExceptionHandler {
+class OrderExceptionHandler {
 
     @ExceptionHandler(OrderNotFoundException.class)
-    public ResponseEntity<ErrorResponse> handleOrderNotFound(OrderNotFoundException ex) {
-        return ResponseEntity.status(HttpStatus.NOT_FOUND)
-            .body(new ErrorResponse("ORDER_NOT_FOUND", ex.getMessage()));
+    ProblemDetail notFound(OrderNotFoundException e) {
+        return ProblemDetail.forStatusAndDetail(HttpStatus.NOT_FOUND, e.getMessage());
     }
 
-    @ExceptionHandler(InvalidOrderStateException.class)
-    public ResponseEntity<ErrorResponse> handleInvalidState(InvalidOrderStateException ex) {
-        return ResponseEntity.status(HttpStatus.CONFLICT)
-            .body(new ErrorResponse("INVALID_ORDER_STATE", ex.getMessage()));
+    @ExceptionHandler(OrderStateException.class)
+    ProblemDetail invalidState(OrderStateException e) {
+        return ProblemDetail.forStatusAndDetail(HttpStatus.CONFLICT, e.getMessage());
     }
 
-    @ExceptionHandler(MethodArgumentNotValidException.class)
-    public ResponseEntity<ErrorResponse> handleValidation(MethodArgumentNotValidException ex) {
-        String message = ex.getBindingResult().getFieldErrors().stream()
-            .map(e -> e.getField() + ": " + e.getDefaultMessage())
-            .collect(Collectors.joining(", "));
-        return ResponseEntity.badRequest()
-            .body(new ErrorResponse("VALIDATION_ERROR", message));
+    @ExceptionHandler(ObjectOptimisticLockingFailureException.class)
+    ProblemDetail concurrentUpdate(ObjectOptimisticLockingFailureException e) {
+        return ProblemDetail.forStatusAndDetail(HttpStatus.CONFLICT,
+                "the order was changed by another request; reload it and retry");
+    }
+
+    @ExceptionHandler(IllegalArgumentException.class)
+    ProblemDetail invalidInput(IllegalArgumentException e) {
+        return ProblemDetail.forStatusAndDetail(HttpStatus.BAD_REQUEST, e.getMessage());
     }
 }
 ```
 
-### Configuration
+- An `@ExceptionHandler` that returns `ProblemDetail` renders an RFC 9457 body (`application/problem+json`). Set `spring.mvc.problemdetails.enabled=true` so that Spring MVC's own exceptions, such as validation failures, use the same format. The property defaults to `false`.
+- `@Valid` checks the request's shape. The domain checks its invariants: `Money` rejects more decimals than the currency allows, and a line rejects a non-positive quantity.
+- Mapping `IllegalArgumentException` to 400 assumes that domain code throws it only for invalid input. If the codebase also throws it for bugs, introduce a dedicated exception instead.
+- The `ObjectOptimisticLockingFailureException` handler works because the commit happens inside the `orders.cancel(id)` call, in the service's transaction proxy.
+
+## Strict variant: what changes
+
+Only persistence changes. Controllers look the same, and use cases call a port instead of a Spring Data repository, and must always save.
+
+### A domain without JPA
 
 ```java
-// infrastructure/config/ApplicationConfig.java
-@Configuration
-public class ApplicationConfig {
+public class Order {
 
-    @Bean
-    public CreateOrderUseCase createOrderUseCase(
-            OrderRepository orderRepository,
-            CustomerRepository customerRepository,
-            EventPublisher eventPublisher) {
-        return new CreateOrderService(orderRepository, customerRepository, eventPublisher);
+    private final UUID id;
+    private final Long version; // null for a new order; carried so the adapter keeps optimistic locking
+    private final UUID customerId;
+    private final List<OrderLine> lines;
+    private OrderStatus status;
+
+    public static Order place(UUID customerId, List<OrderLine> lines) {
+        if (lines.isEmpty()) {
+            throw new IllegalArgumentException("an order needs at least one line");
+        }
+        return new Order(UUID.randomUUID(), null, customerId, OrderStatus.PENDING, lines);
     }
 
-    @Bean
-    public GetOrderUseCase getOrderUseCase(OrderRepository orderRepository) {
-        return new GetOrderService(orderRepository);
+    // Only for the persistence adapter: rebuilds an order that already exists.
+    public static Order reconstitute(UUID id, Long version, UUID customerId, OrderStatus status,
+            List<OrderLine> lines) {
+        return new Order(id, version, customerId, status, lines);
     }
 
-    @Bean
-    public CancelOrderUseCase cancelOrderUseCase(OrderRepository orderRepository) {
-        return new CancelOrderService(orderRepository);
+    // private constructor, cancel(), total(), and accessors id(), version(), customerId(), status(), lines()
+}
+
+public record OrderLine(UUID id, String sku, int quantity, Money unitPrice) {
+}
+```
+
+### Port and use case
+
+```java
+public interface OrderStore {
+
+    Optional<Order> find(UUID id);
+
+    void save(Order order);
+}
+
+@Transactional
+public void cancel(UUID orderId) {
+    Order order = store.find(orderId).orElseThrow(() -> new OrderNotFoundException(orderId));
+    order.cancel();
+    store.save(order); // required: nothing tracks changes on a plain domain object
+}
+```
+
+### Adapter and JPA entity
+
+```java
+@Entity
+@Table(name = "orders")
+class OrderJpaEntity {
+
+    @Id
+    private UUID id;
+
+    @Version
+    private Long version;
+
+    // customerId, status, and @OneToMany(mappedBy = "order", cascade = ALL, orphanRemoval = true) lines
+
+    static OrderJpaEntity from(Order order) {
+        OrderJpaEntity entity = new OrderJpaEntity();
+        entity.id = order.id();
+        entity.version = order.version(); // null: persist; otherwise merge checks it against the database
+        entity.customerId = order.customerId();
+        entity.status = order.status();
+        order.lines().forEach(line -> entity.lines.add(OrderLineJpaEntity.from(line, entity)));
+        return entity;
+    }
+
+    Order toDomain() {
+        return Order.reconstitute(id, version, customerId, status,
+                lines.stream().map(OrderLineJpaEntity::toDomain).toList()); // always loads the lines
+    }
+}
+
+@Component
+class JpaOrderStore implements OrderStore {
+
+    private final OrderJpaRepository jpa; // extends JpaRepository<OrderJpaEntity, UUID>
+
+    @Override
+    public Optional<Order> find(UUID id) {
+        return jpa.findById(id).map(OrderJpaEntity::toDomain);
+    }
+
+    @Override
+    public void save(Order order) {
+        // A new order (version null) is persisted. An existing one is merged: Hibernate throws
+        // StaleObjectStateException, translated to ObjectOptimisticLockingFailureException,
+        // when the carried version no longer matches.
+        jpa.save(OrderJpaEntity.from(order));
     }
 }
 ```
+
+What this costs compared with the pragmatic template:
+
+- In `cancel()`, `find()` already loaded the order and its lines into the persistence context, so `merge` copies onto those managed instances. A line added in the use case costs a `SELECT` before its `INSERT`, because its assigned id looks existing.
+- `toDomain()` reads the lines on every load, whether the use case needs them or not.
+- After a flush, the domain object's version is stale. Saving it a second time in the same transaction fails with an optimistic-locking error, so save each aggregate once, at the end of the use case.
+- The domain can't extend `AbstractAggregateRoot`, so the use case publishes events itself (`ApplicationEventPublisher`).
+
+## Bean registration
+
+Both templates use component scanning only: `@Service`, `@Component`, and `@RestController` on the classes, and no `@Bean` methods that create the same classes again (`layer-dependencies.md`, section 5).
+
+## Testing
+
+- Domain rules (`Order.place`, `cancel`, `Money`): plain unit tests without Spring.
+- Repositories and use cases against the real database engine: `java-backend:java-testing`.
+- Layering: the ArchUnit rules in `layer-dependencies.md`.
 
 ## Sources
 
 - Robert C. Martin, *Clean Architecture* (2017), ch. 22 "The Clean Architecture"
+- Spring Data JPA reference, Fine-tuning Repository Definition (selectively exposing CRUD methods): https://docs.spring.io/spring-data/jpa/reference/repositories/definition.html
+- Spring Data reference, Publishing Events from Aggregate Roots: https://docs.spring.io/spring-data/jpa/reference/repositories/core-domain-events.html
+- Spring Data Commons Javadoc, `AbstractAggregateRoot`: https://docs.spring.io/spring-data/commons/docs/current/api/org/springframework/data/domain/AbstractAggregateRoot.html
+- Spring Data JPA, Persisting Entities (entity state detection): https://docs.spring.io/spring-data/jpa/reference/jpa/entity-persistence.html
+- Spring Framework reference, Error Responses (`ProblemDetail`, RFC 9457): https://docs.spring.io/spring-framework/reference/web/webmvc/mvc-ann-rest-exceptions.html
+- Spring Boot application properties (`spring.mvc.problemdetails.enabled`): https://docs.spring.io/spring-boot/appendix/application-properties/index.html
 - Spring Boot reference, Structuring Your Code: https://docs.spring.io/spring-boot/reference/using/structuring-your-code.html
+- Hibernate ORM 7.4.5 source, `DefaultMergeEventListener` (version check on merge): https://github.com/hibernate/hibernate-orm/blob/7.4.5/hibernate-core/src/main/java/org/hibernate/event/internal/DefaultMergeEventListener.java
