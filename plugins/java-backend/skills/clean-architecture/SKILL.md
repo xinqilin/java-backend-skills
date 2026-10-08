@@ -1,6 +1,6 @@
 ---
 name: clean-architecture
-description: Layering for Spring Boot + JPA services in the spirit of Clean Architecture - the dependency rule, where transactions, mapping, events, and error translation belong, and the pragmatic (JPA on domain classes) and strict (separate persistence model) variants with their JPA costs. Use when reviewing package structure, layer dependencies, or ArchUnit rules.
+description: Clean Architecture layering for Spring Boot + JPA services - the dependency rule, where transactions and mapping belong, and the pragmatic (JPA on domain classes) versus strict (separate persistence model) variants. Use when reviewing package structure, layer dependencies, or ArchUnit rules.
 user-invocable: false
 allowed-tools: Read, Grep, Glob
 ---
