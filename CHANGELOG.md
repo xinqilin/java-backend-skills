@@ -37,6 +37,7 @@ If you used `install.sh`, remove the symlinks it created under `~/.claude/agents
 
 - Review and analysis commands run in read-only agents that preload the relevant knowledge; agents and skills answer in the user's language.
 - Every behavioral claim was checked against vendor documentation or source code, and reference files list their sources.
+- `effective-java` and `clean-architecture` are rewritten around code that touches the database, with our own examples that compile on Spring Boot 4.1. `clean-architecture` treats JPA annotations on domain classes as the default and still reviews a strict layout (a separate persistence model) on its own terms.
 
 ### Fixed
 
@@ -49,6 +50,11 @@ Wrong guidance that shipped in 1.x:
 - `Stream.toList()` copies its source; Lombok `@Builder` cannot bypass record validation.
 - HikariCP recommends a fixed-size pool (leave `minimum-idle` unset).
 - `@MockBean` no longer exists on Spring Boot 4; use `@MockitoBean`.
+- The double-checked locking example could return `null` when another thread initialized the field between the two checks.
+- `Money` compared amounts with `compareTo` but hashed the raw `BigDecimal`, so equal amounts with different scales hashed differently.
+- The Clean Architecture template registered every use case twice (`@Service` plus a `@Bean` method), and its ArchUnit rule failed on the template's own controllers.
+- "Charge, then save" was presented as the fix for a payment call; it is a dual write. Payments now commit the intent, call the provider outside the transaction with an idempotency key, then record the result.
+- The strict layering template rebuilt JPA entities without `@Version`, so concurrent updates were silently overwritten.
 
 ## 1.3.0
 
