@@ -9,6 +9,8 @@ agent: java-backend:test-reviewer
 
 # Review Unit Tests
 
+If the `test-reviewer` agent instructions (with "Step 0: Detect the test stack") are not already in your context, as in Codex, where plugin agents do not load: read `../../agents/test-reviewer.md` (relative to this SKILL.md, not the working directory) and follow it, then read the SKILL.md of each skill in its `skills:` list (`java-backend:<skill>` is `../<skill>/SKILL.md`).
+
 Review `$ARGUMENTS` (or the test files changed in the working tree when empty) to senior-engineer standards, applying the preloaded `java-backend:java-testing` knowledge (test types, Spring Boot 3 vs 4 APIs, Testcontainers, concurrency tests).
 
 ## Core principle

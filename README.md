@@ -1,11 +1,11 @@
-# java-backend for Claude Code
+# java-backend for Claude Code and Codex
 
 [![Validate](https://github.com/xinqilin/java-backend-skills/actions/workflows/validate.yml/badge.svg)](https://github.com/xinqilin/java-backend-skills/actions/workflows/validate.yml)
 [![License: Apache-2.0](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](LICENSE)
 
 [繁體中文](./README.zh-TW.md) | English
 
-**A Claude Code plugin that reviews, tests, and designs Spring Boot services the way a senior backend engineer does: by knowing exactly how Spring Data JPA, Hibernate, MySQL, and PostgreSQL behave under concurrency and load.**
+**A Claude Code and Codex plugin that reviews, tests, and designs Spring Boot services the way a senior backend engineer does: by knowing exactly how Spring Data JPA, Hibernate, MySQL, and PostgreSQL behave under concurrency and load.**
 
 ## Deep, not broad
 
@@ -37,6 +37,21 @@ Recommended companion: the official Java language server plugin, so Claude sees 
 ```
 
 It needs `jdtls` on your `PATH`.
+
+### Codex
+
+Codex reads the same marketplace (tested with codex-cli 0.160.1):
+
+```bash
+codex plugin marketplace add xinqilin/java-backend-skills
+codex plugin add java-backend@xinqilin
+```
+
+Call a skill by name, for example `$java-backend:code-review src/main/java/com/example/OrderService.java`. Differences from Claude Code:
+
+- Codex does not load plugin agents, so the review commands run in your conversation instead of a read-only helper. Each one reads its agent's instructions and knowledge files itself; your Codex sandbox setting decides whether it may edit files.
+- Knowledge may not load on its own when you just ask a question; name the skill to be sure.
+- The evals below run on Claude Code only.
 
 ## Commands
 

@@ -1,11 +1,11 @@
-# java-backend for Claude Code
+# java-backend for Claude Code and Codex
 
 [![Validate](https://github.com/xinqilin/java-backend-skills/actions/workflows/validate.yml/badge.svg)](https://github.com/xinqilin/java-backend-skills/actions/workflows/validate.yml)
 [![License: Apache-2.0](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](LICENSE)
 
 繁體中文 | [English](./README.md)
 
-**一個 Claude Code plugin，用資深後端工程師的方式審查、測試、設計 Spring Boot 服務：清楚知道 Spring Data JPA、Hibernate、MySQL、PostgreSQL 在並行和高負載下的實際行為。**
+**一個 Claude Code 和 Codex 都能用的 plugin，用資深後端工程師的方式審查、測試、設計 Spring Boot 服務：清楚知道 Spring Data JPA、Hibernate、MySQL、PostgreSQL 在並行和高負載下的實際行為。**
 
 ## 做深，不做廣
 
@@ -37,6 +37,21 @@ plugin 的 `version` 變更時才會收到新版。可以執行 `claude plugin u
 ```
 
 需要先把 `jdtls` 裝在 `PATH` 上。
+
+### Codex
+
+Codex 讀的是同一個 marketplace（以 codex-cli 0.160.1 測試過）：
+
+```bash
+codex plugin marketplace add xinqilin/java-backend-skills
+codex plugin add java-backend@xinqilin
+```
+
+用名稱呼叫 skill，例如 `$java-backend:code-review src/main/java/com/example/OrderService.java`。和 Claude Code 的差異：
+
+- Codex 不會載入 plugin 的 agent，所以審查指令會在你的對話裡執行，而不是在唯讀的小幫手裡。每個指令會自己去讀對應 agent 的說明和知識檔；能不能改檔案，取決於你的 Codex sandbox 設定。
+- 只是提問時，知識不一定會自動載入；想確定用上，就直接指名 skill。
+- 下面的 eval 只能在 Claude Code 上跑。
 
 ## 指令
 

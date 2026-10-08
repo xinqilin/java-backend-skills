@@ -9,6 +9,8 @@ agent: java-backend:code-reviewer
 
 # Code Review
 
+If the `code-reviewer` agent instructions (with "Step 0: Detect the stack") are not already in your context, as in Codex, where plugin agents do not load: read `../../agents/code-reviewer.md` (relative to this SKILL.md, not the working directory) and follow it, then read the SKILL.md of each skill in its `skills:` list (`java-backend:<skill>` is `../<skill>/SKILL.md`).
+
 Review `$ARGUMENTS` (or, if empty, the files changed in the working tree: `git diff --name-only HEAD`) to senior-engineer standards: correctness first, then Clean Code, without over-design.
 
 ## Core philosophy

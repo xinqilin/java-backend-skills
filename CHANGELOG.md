@@ -1,5 +1,12 @@
 # Changelog
 
+## 2.1.0
+
+### Added
+
+- Codex support. Codex reads the existing marketplace: `codex plugin marketplace add xinqilin/java-backend-skills`, then `codex plugin add java-backend@xinqilin`. Tested with codex-cli 0.160.1.
+- `code-review`, `review-pr`, `optimize-query`, and `review-test` read their agent's instructions and preloaded skills themselves when no plugin agent runs them, as in Codex. Claude Code behavior is unchanged.
+
 ## 2.0.0
 
 A rewrite focused on depth for Spring Boot + Spring Data JPA + MySQL/PostgreSQL.

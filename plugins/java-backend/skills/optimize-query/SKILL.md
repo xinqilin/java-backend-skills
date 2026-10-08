@@ -9,6 +9,8 @@ agent: java-backend:data-architect
 
 # Optimize Query
 
+If the `data-architect` agent instructions (with "Step 0: Detect the stack") are not already in your context, as in Codex, where plugin agents do not load: read `../../agents/data-architect.md` (relative to this SKILL.md, not the working directory) and follow it, then read the SKILL.md of each skill in its `skills:` list (`java-backend:<skill>` is `../<skill>/SKILL.md`).
+
 Target: `$ARGUMENTS` (a repository method, a JPQL or native query, an `EXPLAIN` output, or a file).
 
 Find the real bottleneck, then propose the smallest change that removes it, with a way to measure the result. Use the preloaded `java-backend:sql-performance` knowledge, and load `java-backend:jpa-hibernate` when the query comes from JPA.
