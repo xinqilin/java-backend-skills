@@ -1,435 +1,207 @@
-# Concurrency Best Practices
+# Concurrency in Spring Beans
 
-## Item 78: Synchronize Access to Shared Mutable Data
+Items 78-84 of *Effective Java* (3rd ed.), applied to Spring Boot services that use a database. The examples are our own and compile on Spring Boot 4.1 (Java 21).
 
-### The Problem
+## Singleton beans share their fields (Item 78)
+
+Spring manages one shared instance of a singleton bean (the default scope), and every request thread calls it concurrently:
 
 ```java
-// BAD - Race condition
-public class Counter {
-    private int count = 0;
+// BAD: one instance serves every request thread, so this field is shared mutable state.
+@Service
+public class InvoiceTotals {
 
-    public void increment() {
-        count++;  // Not atomic! Read-modify-write
-    }
+    private BigDecimal runningTotal = BigDecimal.ZERO;
 
-    public int getCount() {
-        return count;  // May see stale value
+    public BigDecimal add(BigDecimal amount) {
+        runningTotal = runningTotal.add(amount); // lost updates between concurrent requests
+        return runningTotal;
     }
 }
 ```
 
-### Solutions
+- Keep per-request state in local variables and parameters.
+- For shared counters, use `AtomicLong` or `LongAdder`. For shared caches, use a bounded, expiring cache (Spring Cache with Caffeine), not a `HashMap` field.
+- `WeakHashMap` is not a cache. An entry disappears once its key is no longer referenced anywhere else, which for keys built per request is almost immediately.
+- State that must stay consistent across instances (balances, stock, quotas) belongs in the database. `synchronized` covers one JVM only, and on a `@Transactional` method the lock is released before the proxy commits (`java-backend:transactions-consistency`).
+
+### ThreadLocal on pooled threads
 
 ```java
-// Solution 1: synchronized
-public class Counter {
-    private int count = 0;
-
-    public synchronized void increment() {
-        count++;
-    }
-
-    public synchronized int getCount() {
-        return count;
-    }
-}
-
-// Solution 2: AtomicInteger (preferred for counters)
-public class Counter {
-    private final AtomicInteger count = new AtomicInteger(0);
-
-    public void increment() {
-        count.incrementAndGet();
-    }
-
-    public int getCount() {
-        return count.get();
-    }
-}
-
-// Solution 3: volatile (only for simple flags)
-public class StopFlag {
-    private volatile boolean stopped = false;
-
-    public void stop() {
-        stopped = true;
-    }
-
-    public boolean isStopped() {
-        return stopped;
-    }
-}
-```
-
----
-
-## Item 79: Avoid Excessive Synchronization
-
-### The Problem: Deadlock Risk
-
-```java
-// BAD - Calling alien method while holding lock
-public class ObservableSet<E> {
-    private final List<SetObserver<E>> observers = new ArrayList<>();
-
-    public synchronized void addObserver(SetObserver<E> observer) {
-        observers.add(observer);
-    }
-
-    public synchronized void notifyElementAdded(E element) {
-        for (SetObserver<E> observer : observers) {
-            observer.added(this, element);  // Alien method! Can cause deadlock
-        }
-    }
-}
-```
-
-### Solution: Copy-then-iterate
-
-```java
-public class ObservableSet<E> {
-    private final List<SetObserver<E>> observers = new ArrayList<>();
-
-    public synchronized void addObserver(SetObserver<E> observer) {
-        observers.add(observer);
-    }
-
-    public void notifyElementAdded(E element) {
-        List<SetObserver<E>> snapshot;
-        synchronized (this) {
-            snapshot = new ArrayList<>(observers);  // Copy while holding lock
-        }
-        for (SetObserver<E> observer : snapshot) {
-            observer.added(this, element);  // No lock held
-        }
-    }
-}
-
-// Better: Use CopyOnWriteArrayList
-public class ObservableSet<E> {
-    private final List<SetObserver<E>> observers = new CopyOnWriteArrayList<>();
-
-    public void addObserver(SetObserver<E> observer) {
-        observers.add(observer);
-    }
-
-    public void notifyElementAdded(E element) {
-        for (SetObserver<E> observer : observers) {
-            observer.added(this, element);
-        }
-    }
-}
-```
-
----
-
-## Item 80: Prefer Executors, Tasks, and Streams to Threads
-
-### ExecutorService Basics
-
-```java
-// BAD - Manual thread management
-Thread thread = new Thread(() -> processOrder(order));
-thread.start();
-
-// GOOD - Use ExecutorService
-ExecutorService executor = Executors.newFixedThreadPool(
-    Runtime.getRuntime().availableProcessors()
-);
-
-executor.submit(() -> processOrder(order));
-
-// Proper shutdown
-executor.shutdown();
-try {
-    if (!executor.awaitTermination(60, TimeUnit.SECONDS)) {
-        executor.shutdownNow();
-    }
-} catch (InterruptedException e) {
-    executor.shutdownNow();
-    Thread.currentThread().interrupt();
-}
-```
-
-### Common Executor Types
-
-```java
-// Fixed thread pool - for CPU-bound tasks
-ExecutorService cpuBound = Executors.newFixedThreadPool(
-    Runtime.getRuntime().availableProcessors()
-);
-
-// Cached thread pool - for I/O-bound tasks (short-lived)
-ExecutorService ioBound = Executors.newCachedThreadPool();
-
-// Single thread - for sequential tasks
-ExecutorService sequential = Executors.newSingleThreadExecutor();
-
-// Scheduled - for periodic tasks
-ScheduledExecutorService scheduled = Executors.newScheduledThreadPool(1);
-scheduled.scheduleAtFixedRate(
-    () -> cleanupExpired(),
-    0, 1, TimeUnit.HOURS
-);
-
-// Virtual threads (Java 21+) - for massive concurrency
-ExecutorService virtual = Executors.newVirtualThreadPerTaskExecutor();
-```
-
-**Virtual threads and pinning**: on Java 21-23, a virtual thread that blocks inside `synchronized` pins its carrier thread, which is why older advice says to replace `synchronized` with `ReentrantLock`. Since Java 24 (JEP 491), virtual threads can block in `synchronized` without pinning; pinning remains only in narrow cases such as blocking during class loading or initialization, or in native code that calls back into Java. Check the Java release before recommending a lock rewrite. With Spring Boot, enable them with `spring.threads.virtual.enabled=true` (Boot 3.2+, Java 21+); the Spring Boot docs strongly recommend Java 24 or later.
-
-### CompletableFuture for Async Operations
-
-```java
-public CompletableFuture<OrderResult> processOrderAsync(Order order) {
-    return CompletableFuture
-        .supplyAsync(() -> validateOrder(order), executor)
-        .thenApplyAsync(validated -> calculateTotal(validated), executor)
-        .thenApplyAsync(calculated -> saveOrder(calculated), executor)
-        .exceptionally(ex -> {
-            log.error("Order processing failed", ex);
-            return OrderResult.failed(ex.getMessage());
-        });
-}
-
-// Combining multiple futures
-CompletableFuture<Void> allOrders = CompletableFuture.allOf(
-    processOrderAsync(order1),
-    processOrderAsync(order2),
-    processOrderAsync(order3)
-);
-
-// First to complete
-CompletableFuture<OrderResult> fastest = CompletableFuture.anyOf(
-    processViaServiceA(order),
-    processViaServiceB(order)
-).thenApply(result -> (OrderResult) result);
-```
-
----
-
-## Item 81: Prefer Concurrency Utilities to wait and notify
-
-### Use Concurrent Collections
-
-```java
-// Instead of synchronized HashMap
-private final Map<OrderId, Order> cache = new ConcurrentHashMap<>();
-
-// Atomic compute operations
-cache.computeIfAbsent(orderId, id -> loadOrder(id));
-cache.compute(orderId, (id, existing) ->
-    existing == null ? createNew(id) : update(existing)
-);
-
-// BlockingQueue for producer-consumer
-BlockingQueue<Order> orderQueue = new LinkedBlockingQueue<>(100);
-
-// Producer
-orderQueue.put(order);  // Blocks if full
-
-// Consumer
-Order order = orderQueue.take();  // Blocks if empty
-```
-
-### Use Synchronizers
-
-```java
-// CountDownLatch - wait for N events
-CountDownLatch latch = new CountDownLatch(3);
-
-executor.submit(() -> { doWork1(); latch.countDown(); });
-executor.submit(() -> { doWork2(); latch.countDown(); });
-executor.submit(() -> { doWork3(); latch.countDown(); });
-
-latch.await();  // Wait for all three
-processResults();
-
-// Semaphore - limit concurrent access
-Semaphore permits = new Semaphore(10);  // Max 10 concurrent
-
-public void accessResource() {
-    permits.acquire();
+@Override
+protected void doFilterInternal(HttpServletRequest request, HttpServletResponse response,
+        FilterChain chain) throws ServletException, IOException {
+    TENANT.set(request.getHeader("X-Tenant"));
     try {
-        useResource();
+        chain.doFilter(request, response);
     } finally {
-        permits.release();
+        TENANT.remove(); // request threads are pooled: the next request would inherit it
     }
-}
-
-// CyclicBarrier - synchronize threads at a point
-CyclicBarrier barrier = new CyclicBarrier(3, () -> mergeResults());
-
-// Each thread
-doPartialWork();
-barrier.await();  // Wait for all threads, then mergeResults() runs
-```
-
----
-
-## Item 82: Document Thread Safety
-
-### Thread Safety Levels
-
-```java
-/**
- * Thread-safe order cache with atomic operations.
- *
- * <p>This class is thread-safe. All public methods can be called
- * concurrently from multiple threads without external synchronization.
- *
- * @ThreadSafe
- */
-public class OrderCache {
-    private final ConcurrentHashMap<OrderId, Order> cache = new ConcurrentHashMap<>();
-
-    /**
-     * Gets or loads an order.
-     *
-     * <p>Thread-safe: uses ConcurrentHashMap.computeIfAbsent for atomicity.
-     */
-    public Order get(OrderId id) {
-        return cache.computeIfAbsent(id, this::loadOrder);
-    }
-}
-
-/**
- * Not thread-safe. Instances should be confined to a single thread,
- * or external synchronization must be used.
- *
- * @NotThreadSafe
- */
-public class OrderBuilder {
-    private List<OrderItem> items = new ArrayList<>();
-
-    public OrderBuilder addItem(OrderItem item) {
-        items.add(item);
-        return this;
-    }
-}
-
-/**
- * Conditionally thread-safe.
- *
- * <p>Individual operations are thread-safe, but sequences of operations
- * may require external synchronization.
- */
-public class ConditionallyThreadSafe {
-    // ...
 }
 ```
 
----
+Servlet containers reuse request threads, and a `ThreadLocal` lives until it is removed or its thread ends. If a tenant id that drives an `AbstractRoutingDataSource` is never removed, the next request on that thread reads another tenant's data. Set and remove the value in the same `try`/`finally`.
 
-## Item 83: Use Lazy Initialization Judiciously
+## Transactions are bound to the thread (Items 80, 81)
 
-### Lazy Initialization Patterns
+The `@Transactional` Javadoc says the annotation works with thread-bound transactions and does not propagate to threads started inside the method. The `EntityManager` and its persistence context are bound the same way. Work on another thread:
+
+- runs without the caller's transaction. It doesn't see the caller's uncommitted writes, and it doesn't roll back with the caller.
+- must not use the caller's managed entities. A Hibernate `Session` is single-threaded, and after the caller's transaction ends, lazy loading fails.
+- holds its own pooled connection while it touches the database.
+
+Hand over ids or immutable DTOs, and let the task open its own transaction through a `@Transactional` bean method.
+
+### Start follow-up work after commit
 
 ```java
-// Normal initialization (preferred when possible)
-private final ExpensiveObject field = new ExpensiveObject();
-
-// Lazy initialization with synchronized accessor
-private ExpensiveObject field;
-
-public synchronized ExpensiveObject getField() {
-    if (field == null) {
-        field = new ExpensiveObject();
-    }
-    return field;
+@Transactional
+public UUID place(PlaceOrder command) {
+    Order order = orders.save(Order.from(command));
+    events.publishEvent(new OrderPlaced(order.getId())); // delivered after commit
+    return order.getId();
 }
 
-// Double-check idiom for instance fields
-private volatile ExpensiveObject field;
+@Component
+class InvoiceOnOrderPlaced {
 
-public ExpensiveObject getField() {
-    ExpensiveObject result = field;
-    if (result == null) {
-        synchronized (this) {
-            if (field == null) {
-                field = result = new ExpensiveObject();
-            }
+    private final InvoiceService invoices;
+
+    InvoiceOnOrderPlaced(InvoiceService invoices) {
+        this.invoices = invoices;
+    }
+
+    @Async("reportExecutor")
+    @TransactionalEventListener // AFTER_COMMIT: the new transaction below can see the order
+    void on(OrderPlaced event) {
+        invoices.createFor(event.orderId()); // pass the id, not the entity
+    }
+}
+```
+
+- `@TransactionalEventListener` defaults to the `AFTER_COMMIT` phase. The task starts only if the order committed, and its own transaction can read the order.
+- Without `@Async`, the listener runs on the committing thread, where the finished transaction's resources are still bound. A `@Transactional` (`REQUIRED`) call there joins that transaction, and its writes are never committed. Use `REQUIRES_NEW` there, as the Javadoc of `TransactionSynchronization.afterCommit` advises, or make the listener `@Async`.
+- `@Async` and transaction events live in memory only. If the process stops between the commit and the task, the work is lost. Use an outbox for work that must happen (`java-backend:transactions-consistency`).
+- `@Async`, like `@Transactional`, works through the proxy. Calling an `@Async` method from the same class runs it synchronously on the caller's thread.
+
+## Executors (Item 80)
+
+When no `Executor` bean exists, Spring Boot auto-configures an `AsyncTaskExecutor` named `applicationTaskExecutor`, which `@EnableAsync` uses:
+
+| Threads | Executor | Defaults that matter |
+|---|---|---|
+| Platform | `ThreadPoolTaskExecutor` | 8 core threads; the queue is unbounded, so `max-size` has no effect until `queue-capacity` is set |
+| Virtual (`spring.threads.virtual.enabled=true`) | `SimpleAsyncTaskExecutor` | No concurrency limit unless `spring.task.execution.simple.concurrency-limit` is set |
+
+```yaml
+spring:
+  task:
+    execution:
+      pool:
+        core-size: 8
+        max-size: 16
+        queue-capacity: 500 # bounded: the pool grows toward max-size only when the queue is full
+```
+
+- Every task that calls the database needs a pooled connection, so concurrency above the pool size only adds waiting (`java-backend:sql-performance`).
+- A bounded `ThreadPoolTaskExecutor` rejects new tasks with `TaskRejectedException` once both its queue and its threads are full. Decide whether the caller retries, degrades, or fails.
+- Give a slow workload its own executor and name it in `@Async("reportExecutor")`. Declaring any `Executor` bean makes the auto-configured one back off, and `@EnableAsync` then uses yours. Set `spring.task.execution.mode=force` to keep both.
+
+```java
+@Bean
+ThreadPoolTaskExecutor reportExecutor(ThreadPoolTaskExecutorBuilder builder) {
+    return builder.corePoolSize(4)
+            .maxPoolSize(4)
+            .queueCapacity(200) // bounded: a full queue rejects with TaskRejectedException
+            .threadNamePrefix("report-")
+            .build();
+}
+```
+
+- `CompletableFuture.supplyAsync(task)` without an executor runs on `ForkJoinPool.commonPool()`, which parallel streams share. Pass a Spring-managed executor instead:
+
+```java
+public CompletableFuture<BigDecimal> quote(UUID productId) {
+    return CompletableFuture.supplyAsync(() -> lookUp(productId), executor); // the reportExecutor bean
+}
+```
+
+- Avoid `Executors.newCachedThreadPool()`: it starts a new thread whenever no idle one is available, with no upper bound. An executor you create yourself is also yours to shut down. A Spring bean is shut down when the context closes.
+
+## Concurrent collections (Item 81)
+
+```java
+private final ConcurrentHashMap<String, TaxRule> byRegion = new ConcurrentHashMap<>();
+
+TaxRule ruleFor(String region) {
+    // Runs the loader at most once per absent key, but blocks other updates to the same bin meanwhile.
+    return byRegion.computeIfAbsent(region, loader);
+}
+```
+
+`ConcurrentHashMap.computeIfAbsent` runs the mapping function at most once per absent key, atomically. Its Javadoc also says the computation should be short and simple, because other threads' updates may block while it runs, and that the function must not modify the map:
+
+- A database call inside it holds up writers to the same bin for the length of the query.
+- A nested `computeIfAbsent` on the same map throws `IllegalStateException: Recursive update`.
+- The map never evicts. When keys come from user input, or the data changes, use a bounded cache with expiry.
+
+Prefer `java.util.concurrent` (executors, latches, semaphores, blocking queues) to `wait` and `notify`.
+
+## Lazy initialization (Item 83)
+
+In a Spring application, let the container own the lifecycle. A singleton bean created at startup (or marked `@Lazy`) is initialized once, safely. In code that isn't a bean:
+
+```java
+private volatile TaxTable table;
+
+TaxTable table() {
+    TaxTable local = table;
+    if (local != null) {
+        return local; // fast path: one volatile read
+    }
+    synchronized (this) {
+        if (table == null) {
+            table = TaxTable.load();
         }
+        return table; // read under the lock, so never null
     }
-    return result;
 }
 
-// Lazy initialization holder class idiom (for static fields)
-public class Singleton {
-    private Singleton() {}
+// Static field: the class initializer already runs once, lazily, and safely.
+private static final class Holder {
+    static final TaxTable SHARED = TaxTable.load();
+}
 
-    private static class Holder {
-        static final Singleton INSTANCE = new Singleton();
-    }
-
-    public static Singleton getInstance() {
-        return Holder.INSTANCE;
-    }
+static TaxTable shared() {
+    return Holder.SHARED;
 }
 ```
 
----
+- The double-check idiom needs a `volatile` field, and it must return the value read **inside** the lock. A common broken variant keeps the local variable from the first read and returns it after the lock. When another thread initializes the field in between, the second check skips the assignment, and the method returns `null`.
+- For a static field, the holder class is simpler. The JVM initializes a class once, on first use, with the required locking.
 
-## Item 84: Don't Depend on Thread Scheduler
+## Don't depend on timing (Item 84)
 
-### Bad Practices
+- Using `Thread.sleep` to wait for async work, in code or in tests, is a race. Wait on a `CompletableFuture`, a latch, or a condition. For concurrency tests, see `java-backend:java-testing`.
+- Thread priorities and `Thread.yield()` are not correctness tools.
 
-```java
-// BAD - Busy waiting
-while (!done) {
-    // Wastes CPU cycles
-}
+## Virtual threads
 
-// BAD - Thread.yield() for correctness
-while (!condition) {
-    Thread.yield();  // Unreliable, scheduler-dependent
-}
-
-// BAD - Thread.sleep() for synchronization
-Thread.sleep(100);  // Hope other thread finishes
-doNextStep();
-```
-
-### Good Practices
-
-```java
-// GOOD - Use proper synchronization
-synchronized (lock) {
-    while (!condition) {
-        lock.wait();
-    }
-}
-
-// GOOD - Use CountDownLatch
-latch.await();
-doNextStep();
-
-// GOOD - Use CompletableFuture
-future.thenAccept(result -> doNextStep(result));
-
-// GOOD - Use BlockingQueue
-Order order = queue.take();  // Blocks until available
-process(order);
-```
-
----
-
-## Thread Safety Checklist
-
-| Pattern | Use Case | Example |
-|---------|----------|---------|
-| Immutable | Value objects | `record`, final fields |
-| Thread confinement | Per-request data | ThreadLocal, stack variables |
-| Synchronized | Mutable shared state | synchronized blocks/methods |
-| Concurrent collections | Shared collections | ConcurrentHashMap |
-| Atomic variables | Counters, flags | AtomicInteger, AtomicReference |
-| ExecutorService | Task execution | Thread pools |
-| CompletableFuture | Async operations | Chained async tasks |
+See `java-backend:spring-boot-baseline` (enabling them, which Java version) and `java-backend:sql-performance` (`references/connection-pool.md`: the pool becomes the throttle; pinning on Java 21-23).
 
 ## Sources
 
 - Joshua Bloch, *Effective Java* (3rd ed.), ch. 11 "Concurrency" (items 78-84)
-- Java SE API, `java.util.concurrent`: https://docs.oracle.com/en/java/javase/25/docs/api/java.base/java/util/concurrent/package-summary.html
-- JEP 491, Synchronize Virtual Threads without Pinning (Java 24): https://openjdk.org/jeps/491
-- Spring Boot reference, virtual threads: https://docs.spring.io/spring-boot/reference/features/spring-application.html
+- Spring Framework reference, Bean Scopes (the singleton scope): https://docs.spring.io/spring-framework/reference/core/beans/factory-scopes.html
+- Spring Framework Javadoc, `Transactional` (thread-bound, not propagated to new threads): https://docs.spring.io/spring-framework/docs/current/javadoc-api/org/springframework/transaction/annotation/Transactional.html
+- Spring Framework Javadoc, `TransactionSynchronization.afterCommit` (use `REQUIRES_NEW`): https://docs.spring.io/spring-framework/docs/current/javadoc-api/org/springframework/transaction/support/TransactionSynchronization.html
+- Spring Framework Javadoc, `TransactionalEventListener` (default phase `AFTER_COMMIT`): https://docs.spring.io/spring-framework/docs/current/javadoc-api/org/springframework/transaction/event/TransactionalEventListener.html
+- Spring Framework Javadoc, `EnableAsync` (proxy mode intercepts calls through the proxy only): https://docs.spring.io/spring-framework/docs/current/javadoc-api/org/springframework/scheduling/annotation/EnableAsync.html
+- Spring Boot reference, Task Execution and Scheduling: https://docs.spring.io/spring-boot/reference/features/task-execution-and-scheduling.html
+- Spring Boot application properties (`spring.task.execution.*`): https://docs.spring.io/spring-boot/appendix/application-properties/index.html
+- Spring Boot 4.1.1 source, `TaskExecutionProperties` (pool defaults): https://github.com/spring-projects/spring-boot/blob/v4.1.1/core/spring-boot-autoconfigure/src/main/java/org/springframework/boot/autoconfigure/task/TaskExecutionProperties.java
+- Hibernate ORM 7.4 User Guide (the `Session` is single-threaded): https://docs.hibernate.org/orm/7.4/userguide/html_single/
+- Java SE API, `ConcurrentHashMap.computeIfAbsent`: https://docs.oracle.com/en/java/javase/25/docs/api/java.base/java/util/concurrent/ConcurrentHashMap.html
+- Java SE API, `CompletableFuture` (default executor): https://docs.oracle.com/en/java/javase/25/docs/api/java.base/java/util/concurrent/CompletableFuture.html
+- Java SE API, `WeakHashMap`: https://docs.oracle.com/en/java/javase/25/docs/api/java.base/java/util/WeakHashMap.html
+- Java Language Specification, 12.4.2 "Detailed Initialization Procedure": https://docs.oracle.com/javase/specs/jls/se25/html/jls-12.html#jls-12.4.2
