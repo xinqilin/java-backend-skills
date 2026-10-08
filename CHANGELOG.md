@@ -16,7 +16,7 @@ A rewrite focused on depth for Spring Boot + Spring Data JPA + MySQL/PostgreSQL.
 
 ```text
 /plugin marketplace remove bill-lin-dev-toolkit
-/plugin marketplace add xinqilin/claude-dev-toolkit-marketplace
+/plugin marketplace add xinqilin/java-backend-skills
 /plugin install java-backend@xinqilin
 ```
 

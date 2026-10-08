@@ -1,6 +1,6 @@
 # java-backend for Claude Code
 
-[![Validate](https://github.com/xinqilin/claude-dev-toolkit-marketplace/actions/workflows/validate.yml/badge.svg)](https://github.com/xinqilin/claude-dev-toolkit-marketplace/actions/workflows/validate.yml)
+[![Validate](https://github.com/xinqilin/java-backend-skills/actions/workflows/validate.yml/badge.svg)](https://github.com/xinqilin/java-backend-skills/actions/workflows/validate.yml)
 [![License: Apache-2.0](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](LICENSE)
 
 繁體中文 | [English](./README.md)
@@ -24,7 +24,7 @@
 在 Claude Code 裡執行：
 
 ```text
-/plugin marketplace add xinqilin/claude-dev-toolkit-marketplace
+/plugin marketplace add xinqilin/java-backend-skills
 /plugin install java-backend@xinqilin
 ```
 
@@ -55,7 +55,7 @@ plugin 的 `version` 變更時才會收到新版。可以執行 `claude plugin u
 
 每個審查指令都在一個唯讀的小幫手 agent 裡執行，開工前就已載入相關知識：交易與隔離等級、JPA/Hibernate、SQL 效能、測試，以及 Spring Boot 的版本差異。給建議之前，它會先讀你的 `pom.xml` 或 `build.gradle` 和 `application.yml`，讓建議符合你的 Spring Boot、Hibernate 和資料庫版本。
 
-核心觀念的圖解說明（中英雙語）：**https://xinqilin.github.io/claude-dev-toolkit-marketplace/**
+核心觀念的圖解說明（中英雙語）：**https://xinqilin.github.io/java-backend-skills/**
 
 ## Eval
 

@@ -1,6 +1,6 @@
 # java-backend for Claude Code
 
-[![Validate](https://github.com/xinqilin/claude-dev-toolkit-marketplace/actions/workflows/validate.yml/badge.svg)](https://github.com/xinqilin/claude-dev-toolkit-marketplace/actions/workflows/validate.yml)
+[![Validate](https://github.com/xinqilin/java-backend-skills/actions/workflows/validate.yml/badge.svg)](https://github.com/xinqilin/java-backend-skills/actions/workflows/validate.yml)
 [![License: Apache-2.0](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](LICENSE)
 
 [繁體中文](./README.zh-TW.md) | English
@@ -24,7 +24,7 @@ What it catches that a generic review usually misses:
 In Claude Code:
 
 ```text
-/plugin marketplace add xinqilin/claude-dev-toolkit-marketplace
+/plugin marketplace add xinqilin/java-backend-skills
 /plugin install java-backend@xinqilin
 ```
 
@@ -55,7 +55,7 @@ You can also just ask ("review this service", "why is this query slow?"); the kn
 
 Each review command runs in a read-only helper agent that starts with the relevant knowledge already loaded: transactions and isolation, JPA/Hibernate, SQL performance, testing, and Spring Boot version differences. Before giving advice, it reads your `pom.xml` or `build.gradle` and `application.yml`, so the advice matches your Spring Boot, Hibernate, and database versions.
 
-Picture explainers of the core ideas, in English and Traditional Chinese: **https://xinqilin.github.io/claude-dev-toolkit-marketplace/**
+Picture explainers of the core ideas, in English and Traditional Chinese: **https://xinqilin.github.io/java-backend-skills/**
 
 ## Evals
 
